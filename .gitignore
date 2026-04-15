@@ -46,3 +46,5 @@ tmp/
 /project_docs.local/
 /project_docs/
 /project_docs/**
+/project_meta/
+/project_meta/**
