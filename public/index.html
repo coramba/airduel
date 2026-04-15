@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Air Duel</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="page-header">
+        <h1>Air Duel</h1>
+        <p class="intro">
+          Share a link, take off from opposite airfields, and duel until one
+          pilot wins the round.
+        </p>
+      </header>
+
+      <main class="layout">
+        <section class="panel panel-large">
+          <h2>Battlefield</h2>
+          <div id="canvas-root" class="canvas-root"></div>
+        </section>
+
+        <section class="panel panel-stack">
+          <div class="panel-block">
+            <h2>Match Setup</h2>
+            <div class="action-row">
+              <button id="create-room-button" class="button button-primary" type="button">
+                Create Match
+              </button>
+              <button id="secondary-action-button" class="button button-secondary" type="button">
+                Join by Code
+              </button>
+            </div>
+
+            <form id="setup-form" class="join-form" hidden>
+              <label id="setup-field-label" class="field-label" for="join-room-input">
+                Paste code or join link
+              </label>
+              <div class="join-row">
+                <input
+                  id="join-room-input"
+                  class="text-input"
+                  type="text"
+                  autocomplete="off"
+                  placeholder="Paste code or join link"
+                />
+                <button id="setup-submit-button" class="button" type="submit">Join</button>
+              </div>
+            </form>
+
+            <p id="session-feedback" class="feedback" aria-live="polite"></p>
+          </div>
+
+          <div class="panel-block">
+            <h2>Room</h2>
+            <ul id="player-list" class="player-list"></ul>
+            <p id="rematch-status" class="feedback" aria-live="polite"></p>
+          </div>
+
+          <div class="panel-block">
+            <h2>Controls</h2>
+            <ul class="controls-list">
+              <li><strong>Start roll:</strong> press <code>Space</code> or <code>Enter</code></li>
+              <li><strong>Lift off:</strong> hold <code>ArrowUp</code> after a short runway roll</li>
+              <li><strong>Pitch:</strong> use <code>ArrowUp</code> and <code>ArrowDown</code> in the air</li>
+              <li><strong>Fire:</strong> hold <code>Control</code></li>
+              <li><strong>Replay:</strong> press <code>Y</code> or use Rematch after a round ends</li>
+            </ul>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="/client/main.js"></script>
+  </body>
+</html>

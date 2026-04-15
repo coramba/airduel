@@ -1,0 +1,48 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+pnpm-lock.yaml*
+lerna-debug.log*
+
+# Folders
+node_modules
+.DS_Store
+dist
+dist-ssr
+coverage
+*.local
+dev-dist
+.vscode
+
+# E2E: Cypress
+/cypress/videos/
+/cypress/screenshots/
+
+# Editor directories and files
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.tsbuildinfo
+
+# TS build files
+*.tsbuildinfo
+
+# Custom Files
+2Do.txt
+TODO.md
+AGENTS.md
+**/AGENTS.md
+descript.ion
+/.pnpm-store/**
+tmp/
+
+/project_docs.local/
+/project_docs/
+/project_docs/**
