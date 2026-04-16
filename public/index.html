@@ -69,6 +69,20 @@
               <li><strong>Replay:</strong> press <code>Y</code> or use Rematch after a round ends</li>
             </ul>
           </div>
+
+          <div id="plane-debug-panel" class="panel-block" hidden>
+            <h2>Plane Debug</h2>
+            <p class="debug-copy">
+              Double-press <code>X</code> to toggle the plane grid. Edit the geometry JSON below to preview changes live in this browser.
+            </p>
+            <label class="field-label" for="plane-geometry-editor">Plane geometry JSON</label>
+            <textarea
+              id="plane-geometry-editor"
+              class="debug-textarea"
+              spellcheck="false"
+            ></textarea>
+            <p id="plane-geometry-feedback" class="feedback" aria-live="polite"></p>
+          </div>
         </section>
       </main>
     </div>

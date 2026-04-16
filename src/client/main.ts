@@ -16,6 +16,13 @@ import {
   type ServerErrorCode,
   type ServerMessage
 } from '../shared/game.js';
+import {
+  PLANE_GEOMETRY,
+  getPlaneShapeOrigin,
+  type PlaneGeometry,
+  type PlanePoint,
+  type PlaneSegment
+} from '../shared/plane-shape.js';
 
 // Browser runtime for the game client.
 // This file owns:
@@ -37,16 +44,47 @@ interface AppState {
   setupPanelMode: SetupPanelMode;
 }
 
-const PLAYER_COLORS: Record<PlayerSlot, { body: string; trim: string; glow: string }> = {
+type PlanePalette = {
+  fuselageLight: string;
+  fuselageMid: string;
+  fuselageDark: string;
+  accent: string;
+  accentSoft: string;
+  canopy: string;
+  metal: string;
+  propeller: string;
+  glow: string;
+  tire: string;
+};
+
+const PLANE_GRID_EXTENT = 100;
+const PLANE_GRID_STEP = 10;
+const GRID_TOGGLE_DOUBLE_PRESS_MS = 360;
+
+const PLAYER_COLORS: Record<PlayerSlot, PlanePalette> = {
   left: {
-    body: '#d4552d',
-    trim: '#ffe9dc',
-    glow: 'rgba(212, 85, 45, 0.32)'
+    fuselageLight: '#f27263',
+    fuselageMid: '#d4552d',
+    fuselageDark: '#8c2f1f',
+    accent: '#702418',
+    accentSoft: '#f5a18f',
+    canopy: '#5e2a23',
+    metal: '#4f2b22',
+    propeller: '#c93429',
+    glow: 'rgba(212, 85, 45, 0.32)',
+    tire: '#2f2a2a'
   },
   right: {
-    body: '#2a5d94',
-    trim: '#ebf7ff',
-    glow: 'rgba(42, 93, 148, 0.3)'
+    fuselageLight: '#74b3f2',
+    fuselageMid: '#2a5d94',
+    fuselageDark: '#173a60',
+    accent: '#122e4c',
+    accentSoft: '#a5d1f8',
+    canopy: '#243d5a',
+    metal: '#243645',
+    propeller: '#cf4335',
+    glow: 'rgba(42, 93, 148, 0.3)',
+    tire: '#262224'
   }
 };
 
@@ -213,10 +251,12 @@ function drawPlane(
   player: PlayerState,
   isCurrentPlayer: boolean
 ): void {
-  // The plane shape is intentionally simple and stylized.
-  // Simulation depth belongs on the server, not in client-side rendering.
+  // Plane rendering stays purely cosmetic. The server still owns the movement,
+  // hit logic, and exact state; the client just draws a readable biplane shell.
   const colors = PLAYER_COLORS[player.slot];
   const { plane } = player;
+  const isMirrored = player.slot === 'right';
+  const geometry = getActivePlaneGeometry();
 
   if (plane.phase === 'destroyed') {
     drawExplosion(context, plane.position.x, plane.position.y, colors.glow);
@@ -224,24 +264,200 @@ function drawPlane(
   }
 
   context.save();
-  context.translate(plane.position.x, plane.position.y);
-  context.rotate(plane.angle);
+  const shapeOrigin = getPlaneShapeOrigin(plane.position, geometry);
+  context.translate(shapeOrigin.x, shapeOrigin.y);
+  if (isMirrored) {
+    // The right pilot's simulation heading is centered around `Math.PI`.
+    // Rendering that heading with a literal 180-degree rotation flips the
+    // asymmetrical biplane upside down, so we mirror the shape horizontally
+    // and only apply the pitch offset away from the left-facing baseline.
+    context.scale(-1, 1);
+    context.rotate(Math.PI - plane.angle);
+  } else {
+    context.rotate(plane.angle);
+  }
 
   context.shadowBlur = isCurrentPlayer ? 22 : 0;
   context.shadowColor = colors.glow;
 
-  context.fillStyle = colors.body;
+  context.fillStyle = colors.fuselageLight;
+  fillPolygon(context, geometry.fuselageTop);
+
+  context.fillStyle = colors.fuselageMid;
+  fillPolygon(context, geometry.fuselageBottom);
+
+  context.fillStyle = colors.accentSoft;
+  fillPolygon(context, geometry.noseCap);
+
+  context.fillStyle = colors.fuselageLight;
+  fillPolygon(context, geometry.topWing);
+
+  context.fillStyle = colors.accent;
+  fillPolygon(context, geometry.accentStripe);
+
+  context.fillStyle = colors.fuselageDark;
+  fillPolygon(context, geometry.tailFin);
+
+  context.fillStyle = colors.accentSoft;
+  fillPolygon(context, geometry.tailWing);
+
+  context.fillStyle = colors.fuselageMid;
+  fillPolygon(context, geometry.bottomWing);
+
+  context.fillStyle = colors.fuselageDark;
+  context.strokeStyle = colors.fuselageDark;
+  context.lineWidth = 2.5;
+  context.lineCap = 'round';
+  for (const strut of geometry.struts) {
+    strokeSegment(context, strut);
+  }
+
+  context.strokeStyle = colors.metal;
+  for (const gearSegment of geometry.landingGear) {
+    strokeSegment(context, gearSegment);
+  }
+
+  context.fillStyle = colors.tire;
+  fillCircle(context, geometry.wheel.center, geometry.wheel.radius);
+
+  context.fillStyle = '#dad7db';
+  fillCircle(context, geometry.wheelHub.center, geometry.wheelHub.radius);
+
+  context.fillStyle = 'rgba(255, 247, 222, 0.95)';
+  fillPolygon(context, geometry.cockpit);
+  context.strokeStyle = colors.canopy;
+  context.lineWidth = 2;
+  strokePolygon(context, geometry.cockpit);
+
+  context.fillStyle = colors.propeller;
+  fillEllipse(
+    context,
+    geometry.propeller.center,
+    geometry.propeller.radiusX,
+    geometry.propeller.radiusY
+  );
+
+  context.fillStyle = '#b53b2f';
+  fillCircle(context, geometry.spinner.center, geometry.spinner.radius);
+
+  if (showPlaneGrid) {
+    drawPlaneGridOverlay(context, isMirrored);
+  }
+
+  context.restore();
+}
+
+function fillPolygon(context: CanvasRenderingContext2D, points: readonly PlanePoint[]): void {
+  if (points.length === 0) {
+    return;
+  }
+
   context.beginPath();
-  context.moveTo(24, 0);
-  context.lineTo(-12, -9);
-  context.lineTo(-18, 0);
-  context.lineTo(-12, 9);
+  context.moveTo(points[0].x, points[0].y);
+
+  for (let index = 1; index < points.length; index += 1) {
+    context.lineTo(points[index].x, points[index].y);
+  }
+
   context.closePath();
   context.fill();
+}
 
-  context.fillStyle = colors.trim;
-  context.fillRect(-16, -2.5, 26, 5);
-  context.fillRect(-4, -13, 7, 26);
+function strokePolygon(context: CanvasRenderingContext2D, points: readonly PlanePoint[]): void {
+  if (points.length === 0) {
+    return;
+  }
+
+  context.beginPath();
+  context.moveTo(points[0].x, points[0].y);
+
+  for (let index = 1; index < points.length; index += 1) {
+    context.lineTo(points[index].x, points[index].y);
+  }
+
+  context.closePath();
+  context.stroke();
+}
+
+function strokeSegment(context: CanvasRenderingContext2D, segment: PlaneSegment): void {
+  context.beginPath();
+  context.moveTo(segment.start.x, segment.start.y);
+  context.lineTo(segment.end.x, segment.end.y);
+  context.stroke();
+}
+
+function fillCircle(context: CanvasRenderingContext2D, center: PlanePoint, radius: number): void {
+  context.beginPath();
+  context.arc(center.x, center.y, radius, 0, Math.PI * 2);
+  context.fill();
+}
+
+function fillEllipse(
+  context: CanvasRenderingContext2D,
+  center: PlanePoint,
+  radiusX: number,
+  radiusY: number
+): void {
+  context.beginPath();
+  context.ellipse(center.x, center.y, radiusX, radiusY, 0, 0, Math.PI * 2);
+  context.fill();
+}
+
+function drawPlaneGridOverlay(context: CanvasRenderingContext2D, isMirrored: boolean): void {
+  context.save();
+  context.globalAlpha = 0.75;
+
+  for (
+    let coordinate = -PLANE_GRID_EXTENT;
+    coordinate <= PLANE_GRID_EXTENT;
+    coordinate += PLANE_GRID_STEP
+  ) {
+    const isAxis = coordinate === 0;
+
+    context.strokeStyle = isAxis ? 'rgba(0, 0, 0, 0.86)' : 'rgba(0, 0, 0, 0.5)';
+    context.lineWidth = isAxis ? 1.8 : 0.75;
+
+    context.beginPath();
+    context.moveTo(coordinate, -PLANE_GRID_EXTENT);
+    context.lineTo(coordinate, PLANE_GRID_EXTENT);
+    context.stroke();
+
+    context.beginPath();
+    context.moveTo(-PLANE_GRID_EXTENT, coordinate);
+    context.lineTo(PLANE_GRID_EXTENT, coordinate);
+    context.stroke();
+  }
+
+  context.fillStyle = 'rgba(0, 0, 0, 0.95)';
+  context.font = '700 12px "Trebuchet MS", sans-serif';
+  context.textBaseline = 'middle';
+
+  context.textAlign = 'center';
+  drawPlaneGridLabel(context, `${-PLANE_GRID_EXTENT}`, -PLANE_GRID_EXTENT, -8, isMirrored);
+  drawPlaneGridLabel(context, `${PLANE_GRID_EXTENT}`, PLANE_GRID_EXTENT, -8, isMirrored);
+
+  context.textAlign = 'left';
+  drawPlaneGridLabel(context, `${-PLANE_GRID_EXTENT}`, 6, -PLANE_GRID_EXTENT, isMirrored);
+  drawPlaneGridLabel(context, `${PLANE_GRID_EXTENT}`, 6, PLANE_GRID_EXTENT, isMirrored);
+
+  context.restore();
+}
+
+function drawPlaneGridLabel(
+  context: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  isMirrored: boolean
+): void {
+  context.save();
+
+  if (isMirrored) {
+    context.scale(-1, 1);
+    context.fillText(text, -x, y);
+  } else {
+    context.fillText(text, x, y);
+  }
 
   context.restore();
 }
@@ -338,6 +554,9 @@ const setupSubmitButton = requireElement<HTMLButtonElement>('#setup-submit-butto
 const feedbackElement = requireElement<HTMLParagraphElement>('#session-feedback');
 const playerListElement = requireElement<HTMLUListElement>('#player-list');
 const rematchStatusElement = requireElement<HTMLParagraphElement>('#rematch-status');
+const planeDebugPanel = requireElement<HTMLDivElement>('#plane-debug-panel');
+const planeGeometryEditor = requireElement<HTMLTextAreaElement>('#plane-geometry-editor');
+const planeGeometryFeedbackElement = requireElement<HTMLParagraphElement>('#plane-geometry-feedback');
 const canvas = createCanvas();
 const canvasContext = canvas.getContext('2d');
 
@@ -364,6 +583,11 @@ const state: AppState = {
 
 let socket: WebSocket | null = null;
 let localInput = createDefaultInputState();
+let showPlaneGrid = false;
+let lastGridToggleKeyAt = 0;
+let planeGeometryDraft = serializePlaneGeometry(PLANE_GEOMETRY);
+let planeGeometryFeedback = '';
+let editablePlaneGeometry: PlaneGeometry | null = null;
 
 // `render()` is the single place that synchronizes DOM controls from app state.
 // Gameplay visuals are rendered to canvas; setup UI and room info are DOM-based.
@@ -397,8 +621,22 @@ function render(): void {
   feedbackElement.textContent = getVisibleFeedback();
   feedbackElement.hidden = feedbackElement.textContent === '';
   rematchStatusElement.textContent = getRematchStatusText();
+  planeDebugPanel.hidden = !showPlaneGrid;
+  if (document.activeElement !== planeGeometryEditor && planeGeometryEditor.value !== planeGeometryDraft) {
+    planeGeometryEditor.value = planeGeometryDraft;
+  }
+  planeGeometryFeedbackElement.textContent = planeGeometryFeedback;
+  planeGeometryFeedbackElement.hidden = planeGeometryFeedback === '';
 
   renderPlayerList();
+}
+
+function getActivePlaneGeometry(): PlaneGeometry {
+  return editablePlaneGeometry ?? PLANE_GEOMETRY;
+}
+
+function serializePlaneGeometry(geometry: PlaneGeometry): string {
+  return JSON.stringify(geometry, null, 2);
 }
 
 function shouldShowHud(roomState: RoomState): boolean {
@@ -875,6 +1113,31 @@ function updateInputField(field: keyof InputState, pressed: boolean): void {
 function handleGameplayKey(event: KeyboardEvent, pressed: boolean): void {
   if (
     pressed &&
+    !event.repeat &&
+    (event.code === 'KeyX' || event.key === 'x' || event.key === 'X') &&
+    !isEditableTarget(event.target)
+  ) {
+    const now = Date.now();
+
+    if (now - lastGridToggleKeyAt <= GRID_TOGGLE_DOUBLE_PRESS_MS) {
+      showPlaneGrid = !showPlaneGrid;
+      lastGridToggleKeyAt = 0;
+      if (showPlaneGrid) {
+        planeGeometryDraft = serializePlaneGeometry(getActivePlaneGeometry());
+        planeGeometryFeedback = 'Plane debug mode enabled.';
+      } else {
+        planeGeometryFeedback = '';
+      }
+      event.preventDefault();
+      render();
+      return;
+    }
+
+    lastGridToggleKeyAt = now;
+  }
+
+  if (
+    pressed &&
     (event.code === 'KeyY' || event.key === 'y' || event.key === 'Y') &&
     canRequestRematch()
   ) {
@@ -910,6 +1173,120 @@ function handleGameplayKey(event: KeyboardEvent, pressed: boolean): void {
   }
 
   updateInputField(field, pressed);
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target.isContentEditable
+  );
+}
+
+function applyPlaneGeometryDraft(rawDraft: string): void {
+  planeGeometryDraft = rawDraft;
+
+  try {
+    const parsedValue = JSON.parse(rawDraft) as unknown;
+
+    if (!isPlaneGeometry(parsedValue)) {
+      throw new Error('The JSON does not match the expected plane geometry shape.');
+    }
+
+    editablePlaneGeometry = parsedValue;
+    planeGeometryFeedback = 'Plane geometry updated locally.';
+    render();
+  } catch (error) {
+    editablePlaneGeometry = null;
+    planeGeometryFeedback =
+      error instanceof Error ? error.message : 'Plane geometry JSON is invalid.';
+    render();
+  }
+}
+
+function isPlaneGeometry(value: unknown): value is PlaneGeometry {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const geometry = value as Record<string, unknown>;
+  return (
+    typeof geometry.renderOffsetY === 'number' &&
+    isPlanePoint(geometry.muzzlePoint) &&
+    isPlanePointArray(geometry.fuselageTop) &&
+    isPlanePointArray(geometry.fuselageBottom) &&
+    isPlanePointArray(geometry.noseCap) &&
+    isPlanePointArray(geometry.topWing) &&
+    isPlanePointArray(geometry.bottomWing) &&
+    isPlanePointArray(geometry.accentStripe) &&
+    isPlanePointArray(geometry.tailFin) &&
+    isPlanePointArray(geometry.tailWing) &&
+    isPlanePointArray(geometry.cockpit) &&
+    isPlaneSegmentArray(geometry.struts) &&
+    isPlaneSegmentArray(geometry.landingGear) &&
+    isPlaneEllipse(geometry.propeller) &&
+    isPlaneCircle(geometry.spinner) &&
+    isPlaneCircle(geometry.wheel) &&
+    isPlaneCircle(geometry.wheelHub) &&
+    isCollisionPolygonArray(geometry.collisionPolygons)
+  );
+}
+
+function isPlanePoint(value: unknown): value is PlanePoint {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const point = value as Record<string, unknown>;
+  return typeof point.x === 'number' && typeof point.y === 'number';
+}
+
+function isPlanePointArray(value: unknown): value is PlanePoint[] {
+  return Array.isArray(value) && value.every((point) => isPlanePoint(point));
+}
+
+function isPlaneSegmentArray(value: unknown): value is PlaneSegment[] {
+  return (
+    Array.isArray(value) &&
+    value.every((segment) => {
+      if (!segment || typeof segment !== 'object') {
+        return false;
+      }
+
+      const candidate = segment as Record<string, unknown>;
+      return isPlanePoint(candidate.start) && isPlanePoint(candidate.end);
+    })
+  );
+}
+
+function isPlaneEllipse(value: unknown): value is PlaneGeometry['propeller'] {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const ellipse = value as Record<string, unknown>;
+  return (
+    isPlanePoint(ellipse.center) &&
+    typeof ellipse.radiusX === 'number' &&
+    typeof ellipse.radiusY === 'number'
+  );
+}
+
+function isPlaneCircle(value: unknown): value is PlaneGeometry['spinner'] {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const circle = value as Record<string, unknown>;
+  return isPlanePoint(circle.center) && typeof circle.radius === 'number';
+}
+
+function isCollisionPolygonArray(value: unknown): value is PlanePoint[][] {
+  return Array.isArray(value) && value.every((polygon) => isPlanePointArray(polygon));
 }
 
 // Room setup section.
@@ -1010,6 +1387,10 @@ setupForm.addEventListener('submit', (event) => {
   }
 
   connectToRoom(roomId);
+});
+
+planeGeometryEditor.addEventListener('input', () => {
+  applyPlaneGeometryDraft(planeGeometryEditor.value);
 });
 
 window.addEventListener('keydown', (event) => {

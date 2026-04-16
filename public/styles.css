@@ -17,7 +17,7 @@ body {
 }
 
 #app {
-  width: min(1120px, calc(100vw - 32px));
+  width: min(1280px, calc(100vw - 32px));
   margin: 0 auto;
   padding: 32px 0 40px;
 }
@@ -230,13 +230,13 @@ h1 {
 
 .score-crown {
   position: absolute;
-  left: 50%;
+  left: 53%;
   bottom: 100%;
-  width: 33px;
+  width: 30px;
   height: 28px;
-  transform: translate(-50%, 6px);
+  transform: translate(-50%, 3px);
   background: linear-gradient(180deg, #ffd86c 0%, #d4881f 100%);
-  clip-path: polygon(0% 100%, 10% 42%, 30% 65%, 42% 8%, 55% 62%, 72% 34%, 88% 100%);
+  clip-path: polygon(8% 100%, 0% 34%, 30% 65%, 42% 8%, 55% 65%, 88% 34%, 80% 100%);
   box-shadow: 0 3px 8px rgba(112, 70, 7, 0.22);
 }
 
@@ -280,11 +280,30 @@ h1 {
 .controls-list {
   padding-left: 18px;
   margin-bottom: 0;
+  font-size: 0.92rem;
+}
+
+.debug-copy {
+  margin-bottom: 12px;
+  color: #5e7588;
+  font-size: 0.94rem;
+}
+
+.debug-textarea {
+  width: 100%;
+  min-height: 320px;
+  padding: 10px 12px;
+  border: 1px solid rgba(21, 49, 75, 0.16);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.92);
+  color: inherit;
+  font: 13px/1.45 "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  resize: vertical;
 }
 
 @media (min-width: 860px) {
   .layout {
-    grid-template-columns: minmax(0, 1.65fr) minmax(320px, 1fr);
+    grid-template-columns: minmax(0, 1fr) 400px;
     align-items: start;
   }
 

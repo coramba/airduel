@@ -11,6 +11,13 @@ import {
   type PlayerSlot,
   type RoundOutcome
 } from '../shared/game.js';
+import {
+  PLANE_GEOMETRY,
+  getPlaneShapeOrigin,
+  transformPlanePoint,
+  transformPlanePolygon,
+  type PlanePoint
+} from '../shared/plane-shape.js';
 import type { RoomRecord } from './room-registry.js';
 
 // Authoritative round simulation.
@@ -37,9 +44,7 @@ const BULLET_TTL_MS = (BULLET_MAX_DISTANCE / BULLET_SPEED) * 1000;
 const SKY_MARGIN = 28;
 const WRAP_MARGIN = 24;
 const BULLET_MARGIN = 80;
-const PLANE_RADIUS = 18;
 const BULLET_RADIUS = 5;
-const PLANE_NOSE_OFFSET = 22;
 
 const runwayImpactY = GAME_HEIGHT - GROUND_HEIGHT - RUNWAY_HEIGHT / 2;
 
@@ -91,6 +96,13 @@ export function stepRoom(room: RoomRecord): boolean {
     }
   }
 
+  // Plane-on-plane crashes are resolved before bullet travel so direct contact
+  // still ends the round even when neither pilot is hit by a projectile.
+  if (didPlanesCollide(room.state.players)) {
+    destroyedSlots.add('left');
+    destroyedSlots.add('right');
+  }
+
   // Newly spawned bullets are merged into the same pass so they inherit the
   // same authoritative update ordering as all other bullets this tick.
   const bullets = room.state.bullets.concat(spawnedBullets);
@@ -114,7 +126,7 @@ export function stepRoom(room: RoomRecord): boolean {
         continue;
       }
 
-      if (distanceSquared(bullet.position.x, bullet.position.y, player.plane.position.x, player.plane.position.y) <= (PLANE_RADIUS + BULLET_RADIUS) ** 2) {
+      if (doesBulletHitPlane(bullet.position, player.plane)) {
         destroyedSlots.add(player.slot);
         hit = true;
       }
@@ -235,14 +247,13 @@ function maybeCreateBullet(
   }
 
   plane.shotCooldownMs = FIRE_COOLDOWN_MS;
+  const planeOrigin = getPlaneShapeOrigin(plane.position);
+  const muzzlePosition = transformPlanePoint(PLANE_GEOMETRY.muzzlePoint, planeOrigin, plane.angle);
 
   return {
     id: `${slot}-${nextBulletId++}`,
     ownerSlot: slot,
-    position: {
-      x: plane.position.x + Math.cos(plane.angle) * PLANE_NOSE_OFFSET,
-      y: plane.position.y + Math.sin(plane.angle) * PLANE_NOSE_OFFSET
-    },
+    position: muzzlePosition,
     velocity: {
       x: Math.cos(plane.angle) * BULLET_SPEED,
       y: Math.sin(plane.angle) * BULLET_SPEED
@@ -365,6 +376,211 @@ function wrapBulletHorizontally(bullet: BulletState): void {
   }
 }
 
+function didPlanesCollide(players: RoomRecord['state']['players']): boolean {
+  const [leftPlayer, rightPlayer] = players;
+
+  if (!leftPlayer || !rightPlayer) {
+    return false;
+  }
+
+  if (!canPlaneCollide(leftPlayer.plane) || !canPlaneCollide(rightPlayer.plane)) {
+    return false;
+  }
+
+  const leftPolygons = getPlaneCollisionPolygons(leftPlayer.plane);
+  const loopWidth = GAME_WIDTH + WRAP_MARGIN * 2;
+
+  for (const xOffset of [0, -loopWidth, loopWidth]) {
+    const rightPolygons = getPlaneCollisionPolygons(rightPlayer.plane, xOffset);
+    if (doCollisionPolygonSetsIntersect(leftPolygons, rightPolygons)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function canPlaneCollide(plane: PlaneState): boolean {
+  return plane.phase !== 'destroyed';
+}
+
+function getPlaneCollisionPolygons(
+  plane: PlaneState,
+  xOffset = 0
+): PlanePoint[][] {
+  const origin = getPlaneShapeOrigin({
+    x: plane.position.x + xOffset,
+    y: plane.position.y
+  });
+
+  return PLANE_GEOMETRY.collisionPolygons.map((polygon) =>
+    transformPlanePolygon(polygon, origin, plane.angle)
+  );
+}
+
+function doCollisionPolygonSetsIntersect(
+  leftPolygons: readonly PlanePoint[][],
+  rightPolygons: readonly PlanePoint[][]
+): boolean {
+  for (const leftPolygon of leftPolygons) {
+    for (const rightPolygon of rightPolygons) {
+      if (doPolygonsIntersect(leftPolygon, rightPolygon)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function doesBulletHitPlane(bulletCenter: PlanePoint, plane: PlaneState): boolean {
+  const collisionPolygons = getPlaneCollisionPolygons(plane);
+  return collisionPolygons.some((polygon) =>
+    doesCircleIntersectPolygon(bulletCenter, BULLET_RADIUS, polygon)
+  );
+}
+
+function doesCircleIntersectPolygon(
+  center: PlanePoint,
+  radius: number,
+  polygon: readonly PlanePoint[]
+): boolean {
+  if (isPointInPolygon(center, polygon)) {
+    return true;
+  }
+
+  for (let index = 0; index < polygon.length; index += 1) {
+    const start = polygon[index];
+    const end = polygon[(index + 1) % polygon.length];
+
+    if (distancePointToSegmentSquared(center, start, end) <= radius * radius) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function doPolygonsIntersect(
+  leftPolygon: readonly PlanePoint[],
+  rightPolygon: readonly PlanePoint[]
+): boolean {
+  for (let leftIndex = 0; leftIndex < leftPolygon.length; leftIndex += 1) {
+    const leftStart = leftPolygon[leftIndex];
+    const leftEnd = leftPolygon[(leftIndex + 1) % leftPolygon.length];
+
+    for (let rightIndex = 0; rightIndex < rightPolygon.length; rightIndex += 1) {
+      const rightStart = rightPolygon[rightIndex];
+      const rightEnd = rightPolygon[(rightIndex + 1) % rightPolygon.length];
+
+      if (doSegmentsIntersect(leftStart, leftEnd, rightStart, rightEnd)) {
+        return true;
+      }
+    }
+  }
+
+  return isPointInPolygon(leftPolygon[0], rightPolygon) || isPointInPolygon(rightPolygon[0], leftPolygon);
+}
+
+function doSegmentsIntersect(
+  firstStart: PlanePoint,
+  firstEnd: PlanePoint,
+  secondStart: PlanePoint,
+  secondEnd: PlanePoint
+): boolean {
+  const orientationA = orientation(firstStart, firstEnd, secondStart);
+  const orientationB = orientation(firstStart, firstEnd, secondEnd);
+  const orientationC = orientation(secondStart, secondEnd, firstStart);
+  const orientationD = orientation(secondStart, secondEnd, firstEnd);
+
+  if (orientationA !== orientationB && orientationC !== orientationD) {
+    return true;
+  }
+
+  if (orientationA === 0 && isPointOnSegment(secondStart, firstStart, firstEnd)) {
+    return true;
+  }
+
+  if (orientationB === 0 && isPointOnSegment(secondEnd, firstStart, firstEnd)) {
+    return true;
+  }
+
+  if (orientationC === 0 && isPointOnSegment(firstStart, secondStart, secondEnd)) {
+    return true;
+  }
+
+  if (orientationD === 0 && isPointOnSegment(firstEnd, secondStart, secondEnd)) {
+    return true;
+  }
+
+  return false;
+}
+
+function orientation(origin: PlanePoint, target: PlanePoint, point: PlanePoint): number {
+  const crossProduct =
+    (target.y - origin.y) * (point.x - target.x) -
+    (target.x - origin.x) * (point.y - target.y);
+
+  if (Math.abs(crossProduct) < 0.0001) {
+    return 0;
+  }
+
+  return crossProduct > 0 ? 1 : 2;
+}
+
+function isPointOnSegment(point: PlanePoint, segmentStart: PlanePoint, segmentEnd: PlanePoint): boolean {
+  return (
+    point.x <= Math.max(segmentStart.x, segmentEnd.x) &&
+    point.x >= Math.min(segmentStart.x, segmentEnd.x) &&
+    point.y <= Math.max(segmentStart.y, segmentEnd.y) &&
+    point.y >= Math.min(segmentStart.y, segmentEnd.y)
+  );
+}
+
+function isPointInPolygon(point: PlanePoint, polygon: readonly PlanePoint[]): boolean {
+  let inside = false;
+
+  for (let index = 0, previousIndex = polygon.length - 1; index < polygon.length; previousIndex = index, index += 1) {
+    const current = polygon[index];
+    const previous = polygon[previousIndex];
+
+    const intersects =
+      current.y > point.y !== previous.y > point.y &&
+      point.x <
+        ((previous.x - current.x) * (point.y - current.y)) / (previous.y - current.y) + current.x;
+
+    if (intersects) {
+      inside = !inside;
+    }
+  }
+
+  return inside;
+}
+
+function distancePointToSegmentSquared(
+  point: PlanePoint,
+  segmentStart: PlanePoint,
+  segmentEnd: PlanePoint
+): number {
+  const segmentX = segmentEnd.x - segmentStart.x;
+  const segmentY = segmentEnd.y - segmentStart.y;
+  const segmentLengthSquared = segmentX * segmentX + segmentY * segmentY;
+
+  if (segmentLengthSquared === 0) {
+    return distanceSquaredPoints(point, segmentStart);
+  }
+
+  const projection =
+    ((point.x - segmentStart.x) * segmentX + (point.y - segmentStart.y) * segmentY) /
+    segmentLengthSquared;
+  const clampedProjection = Math.max(0, Math.min(1, projection));
+
+  return distanceSquaredPoints(point, {
+    x: segmentStart.x + segmentX * clampedProjection,
+    y: segmentStart.y + segmentY * clampedProjection
+  });
+}
+
 function normalizeAngle(angle: number): number {
   return Math.atan2(Math.sin(angle), Math.cos(angle));
 }
@@ -376,10 +592,8 @@ function readPositiveNumber(rawValue: string | undefined, fallback: number): num
   return Number.isFinite(parsedValue) && parsedValue > 0 ? parsedValue : fallback;
 }
 
-// Collision checks stay cheap because the game only has two planes and a small
-// number of bullets, so squared distance is enough.
-function distanceSquared(ax: number, ay: number, bx: number, by: number): number {
-  const dx = ax - bx;
-  const dy = ay - by;
+function distanceSquaredPoints(first: PlanePoint, second: PlanePoint): number {
+  const dx = first.x - second.x;
+  const dy = first.y - second.y;
   return dx * dx + dy * dy;
 }
