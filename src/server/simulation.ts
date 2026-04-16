@@ -1,8 +1,10 @@
 import {
+  BULLET_WRAP_MARGIN,
   GAME_HEIGHT,
   GAME_WIDTH,
   GROUND_HEIGHT,
   PLAYER_SLOTS,
+  PLANE_WRAP_MARGIN,
   RUNWAY_HEIGHT,
   RUNWAY_PLANE_Y,
   createDefaultInputState,
@@ -42,8 +44,6 @@ const BULLET_MAX_DISTANCE = readPositiveNumber(
 );
 const BULLET_TTL_MS = (BULLET_MAX_DISTANCE / BULLET_SPEED) * 1000;
 const SKY_MARGIN = 28;
-const WRAP_MARGIN = 24;
-const BULLET_MARGIN = 80;
 const BULLET_RADIUS = 5;
 
 const runwayImpactY = GAME_HEIGHT - GROUND_HEIGHT - RUNWAY_HEIGHT / 2;
@@ -265,8 +265,8 @@ function maybeCreateBullet(
 function isBulletExpired(bullet: BulletState): boolean {
   return (
     bullet.ttlMs <= 0 ||
-    bullet.position.y < -BULLET_MARGIN ||
-    bullet.position.y > GAME_HEIGHT + BULLET_MARGIN
+    bullet.position.y < -BULLET_WRAP_MARGIN ||
+    bullet.position.y > GAME_HEIGHT + BULLET_WRAP_MARGIN
   );
 }
 
@@ -361,18 +361,18 @@ function noseUpAngleDirection(slot: PlayerSlot): number {
 // Planes and bullets wrap horizontally so combat can continue seamlessly across
 // the screen edge. Vertical escape still counts as leaving the combat area.
 function wrapPlaneHorizontally(plane: PlaneState): void {
-  if (plane.position.x < -WRAP_MARGIN) {
-    plane.position.x = GAME_WIDTH + WRAP_MARGIN;
-  } else if (plane.position.x > GAME_WIDTH + WRAP_MARGIN) {
-    plane.position.x = -WRAP_MARGIN;
+  if (plane.position.x < -PLANE_WRAP_MARGIN) {
+    plane.position.x = GAME_WIDTH + PLANE_WRAP_MARGIN;
+  } else if (plane.position.x > GAME_WIDTH + PLANE_WRAP_MARGIN) {
+    plane.position.x = -PLANE_WRAP_MARGIN;
   }
 }
 
 function wrapBulletHorizontally(bullet: BulletState): void {
-  if (bullet.position.x < -BULLET_MARGIN) {
-    bullet.position.x = GAME_WIDTH + BULLET_MARGIN;
-  } else if (bullet.position.x > GAME_WIDTH + BULLET_MARGIN) {
-    bullet.position.x = -BULLET_MARGIN;
+  if (bullet.position.x < -BULLET_WRAP_MARGIN) {
+    bullet.position.x = GAME_WIDTH + BULLET_WRAP_MARGIN;
+  } else if (bullet.position.x > GAME_WIDTH + BULLET_WRAP_MARGIN) {
+    bullet.position.x = -BULLET_WRAP_MARGIN;
   }
 }
 
@@ -388,7 +388,7 @@ function didPlanesCollide(players: RoomRecord['state']['players']): boolean {
   }
 
   const leftPolygons = getPlaneCollisionPolygons(leftPlayer.plane);
-  const loopWidth = GAME_WIDTH + WRAP_MARGIN * 2;
+  const loopWidth = GAME_WIDTH + PLANE_WRAP_MARGIN * 2;
 
   for (const xOffset of [0, -loopWidth, loopWidth]) {
     const rightPolygons = getPlaneCollisionPolygons(rightPlayer.plane, xOffset);

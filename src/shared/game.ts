@@ -6,6 +6,8 @@ export const GAME_HEIGHT = 648;
 export const GROUND_HEIGHT = 72;
 export const RUNWAY_HEIGHT = 14;
 export const RUNWAY_PLANE_Y = GAME_HEIGHT - GROUND_HEIGHT - RUNWAY_HEIGHT / 2 - 6;
+export const PLANE_WRAP_MARGIN = 24;
+export const BULLET_WRAP_MARGIN = 80;
 
 export const PLAYER_SLOTS = ['left', 'right'] as const;
 

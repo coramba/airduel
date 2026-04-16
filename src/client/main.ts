@@ -1,8 +1,10 @@
 import {
+  BULLET_WRAP_MARGIN,
   GAME_HEIGHT,
   GAME_WIDTH,
   GROUND_HEIGHT,
   PLAYER_SLOTS,
+  PLANE_WRAP_MARGIN,
   RUNWAY_HEIGHT,
   createDefaultInputState,
   type BulletState,
@@ -42,6 +44,21 @@ interface AppState {
   phase: ConnectionPhase;
   feedback: string;
   setupPanelMode: SetupPanelMode;
+}
+
+interface RoomSnapshot {
+  receivedAtMs: number;
+  state: RoomState;
+}
+
+interface PlayerCardRefs {
+  item: HTMLLIElement;
+  scoreCluster: HTMLDivElement;
+  scoreCircle: HTMLSpanElement;
+  crown: HTMLSpanElement;
+  badge: HTMLSpanElement;
+  marker: HTMLSpanElement;
+  detail: HTMLSpanElement;
 }
 
 type PlanePalette = {
@@ -124,30 +141,34 @@ function createCanvas(): HTMLCanvasElement {
   return canvas;
 }
 
-function drawScene(context: CanvasRenderingContext2D, state: AppState): void {
+function drawScene(
+  context: CanvasRenderingContext2D,
+  appState: AppState,
+  roomState: RoomState | null = appState.roomState
+): void {
   drawBackground(context);
 
-  if (!state.roomState) {
+  if (!roomState) {
     drawHeadline(context, 'Create or join a room', 'Room setup happens first, then the duel runs here.');
     return;
   }
 
   drawRunways(context);
 
-  for (const bullet of state.roomState.bullets) {
+  for (const bullet of roomState.bullets) {
     drawBullet(context, bullet);
   }
 
-  for (const player of state.roomState.players) {
-    drawPlane(context, player, state.slot === player.slot);
+  for (const player of roomState.players) {
+    drawPlane(context, player, appState.slot === player.slot);
   }
 
-  if (shouldShowHud(state.roomState)) {
-    drawHud(context, state);
+  if (shouldShowHud(roomState)) {
+    drawHud(context, appState, roomState);
   }
 
-  if (state.roomState.status === 'round_over') {
-    drawRoundResult(context, state);
+  if (roomState.status === 'round_over') {
+    drawRoundResult(context, appState, roomState);
   }
 }
 
@@ -211,11 +232,11 @@ function drawHeadline(context: CanvasRenderingContext2D, title: string, subtitle
   context.fillText(subtitle, 46, 92);
 }
 
-function drawHud(context: CanvasRenderingContext2D, state: AppState): void {
+function drawHud(context: CanvasRenderingContext2D, appState: AppState, roomState: RoomState): void {
   // The HUD is shown only during the waiting phase, so the status text can stay
   // focused on room setup instead of active-flight instructions.
-  const statusLine = getWaitingHudStatusText(state);
-  const detailLine = state.feedback;
+  const statusLine = getWaitingHudStatusText(appState);
+  const detailLine = appState.feedback;
 
   context.fillStyle = 'rgba(255, 248, 234, 0.9)';
   context.fillRect(24, 22, 540, 112);
@@ -225,19 +246,15 @@ function drawHud(context: CanvasRenderingContext2D, state: AppState): void {
   context.font = '16px "Trebuchet MS", sans-serif';
   drawWrappedText(context, detailLine, 42, 58 + statusLineCount * 28 + 10, 500, 20);
 
-  if (!state.roomState) {
-    return;
-  }
-
-  const ownPlayer = state.slot
-    ? state.roomState.players.find((player) => player.slot === state.slot) ?? null
+  const ownPlayer = appState.slot
+    ? roomState.players.find((player) => player.slot === appState.slot) ?? null
     : null;
 
   context.fillStyle = 'rgba(21, 49, 75, 0.82)';
   context.fillRect(GAME_WIDTH - 270, 24, 230, 78);
   context.fillStyle = '#f8fbff';
   context.font = '700 17px "Trebuchet MS", sans-serif';
-  context.fillText(`Room ${state.roomState.id}`, GAME_WIDTH - 250, 50);
+  context.fillText(`Room ${roomState.id}`, GAME_WIDTH - 250, 50);
   context.font = '15px "Trebuchet MS", sans-serif';
   context.fillText(
     ownPlayer ? `${formatSlot(ownPlayer.slot)} pilot: ${formatPhase(ownPlayer.plane.phase)}` : 'Awaiting assignment',
@@ -257,94 +274,115 @@ function drawPlane(
   const { plane } = player;
   const isMirrored = player.slot === 'right';
   const geometry = getActivePlaneGeometry();
+  const horizontalExtent = getPlaneHorizontalRenderExtent(geometry);
 
   if (plane.phase === 'destroyed') {
-    drawExplosion(context, plane.position.x, plane.position.y, colors.glow);
+    drawWrappedHorizontally(
+      plane.position.x,
+      horizontalExtent,
+      GAME_WIDTH + PLANE_WRAP_MARGIN * 2,
+      (xOffset) => {
+        drawExplosion(context, plane.position.x + xOffset, plane.position.y, colors.glow);
+      }
+    );
     return;
   }
 
-  context.save();
-  const shapeOrigin = getPlaneShapeOrigin(plane.position, geometry);
-  context.translate(shapeOrigin.x, shapeOrigin.y);
-  if (isMirrored) {
-    // The right pilot's simulation heading is centered around `Math.PI`.
-    // Rendering that heading with a literal 180-degree rotation flips the
-    // asymmetrical biplane upside down, so we mirror the shape horizontally
-    // and only apply the pitch offset away from the left-facing baseline.
-    context.scale(-1, 1);
-    context.rotate(Math.PI - plane.angle);
-  } else {
-    context.rotate(plane.angle);
-  }
+  drawWrappedHorizontally(
+    plane.position.x,
+    horizontalExtent,
+    GAME_WIDTH + PLANE_WRAP_MARGIN * 2,
+    (xOffset) => {
+      context.save();
+      const shapeOrigin = getPlaneShapeOrigin(
+        {
+          x: plane.position.x + xOffset,
+          y: plane.position.y
+        },
+        geometry
+      );
+      context.translate(shapeOrigin.x, shapeOrigin.y);
+      if (isMirrored) {
+        // The right pilot's simulation heading is centered around `Math.PI`.
+        // Rendering that heading with a literal 180-degree rotation flips the
+        // asymmetrical biplane upside down, so we mirror the shape horizontally
+        // and only apply the pitch offset away from the left-facing baseline.
+        context.scale(-1, 1);
+        context.rotate(Math.PI - plane.angle);
+      } else {
+        context.rotate(plane.angle);
+      }
 
-  context.shadowBlur = isCurrentPlayer ? 22 : 0;
-  context.shadowColor = colors.glow;
+      context.shadowBlur = isCurrentPlayer ? 22 : 0;
+      context.shadowColor = colors.glow;
 
-  context.fillStyle = colors.fuselageLight;
-  fillPolygon(context, geometry.fuselageTop);
+      context.fillStyle = colors.fuselageLight;
+      fillPolygon(context, geometry.fuselageTop);
 
-  context.fillStyle = colors.fuselageMid;
-  fillPolygon(context, geometry.fuselageBottom);
+      context.fillStyle = colors.fuselageMid;
+      fillPolygon(context, geometry.fuselageBottom);
 
-  context.fillStyle = colors.accentSoft;
-  fillPolygon(context, geometry.noseCap);
+      context.fillStyle = colors.accentSoft;
+      fillPolygon(context, geometry.noseCap);
 
-  context.fillStyle = colors.fuselageLight;
-  fillPolygon(context, geometry.topWing);
+      context.fillStyle = colors.fuselageLight;
+      fillPolygon(context, geometry.topWing);
 
-  context.fillStyle = colors.accent;
-  fillPolygon(context, geometry.accentStripe);
+      context.fillStyle = colors.accent;
+      fillPolygon(context, geometry.accentStripe);
 
-  context.fillStyle = colors.fuselageDark;
-  fillPolygon(context, geometry.tailFin);
+      context.fillStyle = colors.fuselageDark;
+      fillPolygon(context, geometry.tailFin);
 
-  context.fillStyle = colors.accentSoft;
-  fillPolygon(context, geometry.tailWing);
+      context.fillStyle = colors.accentSoft;
+      fillPolygon(context, geometry.tailWing);
 
-  context.fillStyle = colors.fuselageMid;
-  fillPolygon(context, geometry.bottomWing);
+      context.fillStyle = colors.fuselageMid;
+      fillPolygon(context, geometry.bottomWing);
 
-  context.fillStyle = colors.fuselageDark;
-  context.strokeStyle = colors.fuselageDark;
-  context.lineWidth = 2.5;
-  context.lineCap = 'round';
-  for (const strut of geometry.struts) {
-    strokeSegment(context, strut);
-  }
+      context.fillStyle = colors.fuselageDark;
+      context.strokeStyle = colors.fuselageDark;
+      context.lineWidth = 2.5;
+      context.lineCap = 'round';
+      for (const strut of geometry.struts) {
+        strokeSegment(context, strut);
+      }
 
-  context.strokeStyle = colors.metal;
-  for (const gearSegment of geometry.landingGear) {
-    strokeSegment(context, gearSegment);
-  }
+      context.strokeStyle = colors.metal;
+      for (const gearSegment of geometry.landingGear) {
+        strokeSegment(context, gearSegment);
+      }
 
-  context.fillStyle = colors.tire;
-  fillCircle(context, geometry.wheel.center, geometry.wheel.radius);
+      context.fillStyle = colors.tire;
+      fillCircle(context, geometry.wheel.center, geometry.wheel.radius);
 
-  context.fillStyle = '#dad7db';
-  fillCircle(context, geometry.wheelHub.center, geometry.wheelHub.radius);
+      context.fillStyle = '#dad7db';
+      fillCircle(context, geometry.wheelHub.center, geometry.wheelHub.radius);
 
-  context.fillStyle = 'rgba(255, 247, 222, 0.95)';
-  fillPolygon(context, geometry.cockpit);
-  context.strokeStyle = colors.canopy;
-  context.lineWidth = 2;
-  strokePolygon(context, geometry.cockpit);
+      context.fillStyle = 'rgba(255, 247, 222, 0.95)';
+      fillPolygon(context, geometry.cockpit);
+      context.strokeStyle = colors.canopy;
+      context.lineWidth = 2;
+      strokePolygon(context, geometry.cockpit);
 
-  context.fillStyle = colors.propeller;
-  fillEllipse(
-    context,
-    geometry.propeller.center,
-    geometry.propeller.radiusX,
-    geometry.propeller.radiusY
+      context.fillStyle = colors.propeller;
+      fillEllipse(
+        context,
+        geometry.propeller.center,
+        geometry.propeller.radiusX,
+        geometry.propeller.radiusY
+      );
+
+      context.fillStyle = '#b53b2f';
+      fillCircle(context, geometry.spinner.center, geometry.spinner.radius);
+
+      if (showPlaneGrid) {
+        drawPlaneGridOverlay(context, isMirrored);
+      }
+
+      context.restore();
+    }
   );
-
-  context.fillStyle = '#b53b2f';
-  fillCircle(context, geometry.spinner.center, geometry.spinner.radius);
-
-  if (showPlaneGrid) {
-    drawPlaneGridOverlay(context, isMirrored);
-  }
-
-  context.restore();
 }
 
 function fillPolygon(context: CanvasRenderingContext2D, points: readonly PlanePoint[]): void {
@@ -480,19 +518,22 @@ function drawExplosion(context: CanvasRenderingContext2D, x: number, y: number, 
 }
 
 function drawBullet(context: CanvasRenderingContext2D, bullet: BulletState): void {
-  context.fillStyle = '#d94133';
-  context.beginPath();
-  context.arc(bullet.position.x, bullet.position.y, 4, 0, Math.PI * 2);
-  context.fill();
+  drawWrappedHorizontally(
+    bullet.position.x,
+    4,
+    GAME_WIDTH + BULLET_WRAP_MARGIN * 2,
+    (xOffset) => {
+      context.fillStyle = '#d94133';
+      context.beginPath();
+      context.arc(bullet.position.x + xOffset, bullet.position.y, 4, 0, Math.PI * 2);
+      context.fill();
+    }
+  );
 }
 
-function drawRoundResult(context: CanvasRenderingContext2D, state: AppState): void {
-  if (!state.roomState) {
-    return;
-  }
-
-  const resultLine = getRoundResultText(state.roomState, state.slot);
-  const subLine = getRoundOverlayMessage(state);
+function drawRoundResult(context: CanvasRenderingContext2D, appState: AppState, roomState: RoomState): void {
+  const resultLine = getRoundResultText(roomState, appState.slot);
+  const subLine = getRoundOverlayMessage(appState);
 
   context.fillStyle = 'rgba(14, 26, 38, 0.74)';
   context.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
@@ -567,6 +608,11 @@ if (!canvasContext) {
 const context = canvasContext;
 canvasRoot.replaceChildren(canvas);
 
+const playerCardRefs = new Map<PlayerSlot, PlayerCardRefs>(
+  PLAYER_SLOTS.map((slot) => [slot, createPlayerCard(slot)])
+);
+playerListElement.replaceChildren(...PLAYER_SLOTS.map((slot) => playerCardRefs.get(slot)!.item));
+
 const initialRoomId = extractRoomId(window.location.href);
 
 const state: AppState = {
@@ -588,12 +634,13 @@ let lastGridToggleKeyAt = 0;
 let planeGeometryDraft = serializePlaneGeometry(PLANE_GEOMETRY);
 let planeGeometryFeedback = '';
 let editablePlaneGeometry: PlaneGeometry | null = null;
+let previousRoomSnapshot: RoomSnapshot | null = null;
+let currentRoomSnapshot: RoomSnapshot | null = null;
 
 // `render()` is the single place that synchronizes DOM controls from app state.
-// Gameplay visuals are rendered to canvas; setup UI and room info are DOM-based.
+// Gameplay visuals are rendered continuously by `requestAnimationFrame`, while
+// this UI sync only updates the DOM controls and side panel.
 function render(): void {
-  drawScene(context, state);
-
   const isBusy = state.phase === 'creating' || state.phase === 'connecting';
   createRoomButton.disabled = isBusy;
 
@@ -629,6 +676,217 @@ function render(): void {
   planeGeometryFeedbackElement.hidden = planeGeometryFeedback === '';
 
   renderPlayerList();
+}
+
+function clearRoomSnapshots(): void {
+  previousRoomSnapshot = null;
+  currentRoomSnapshot = null;
+}
+
+function setCurrentRoomState(nextRoomState: RoomState): void {
+  state.roomState = nextRoomState;
+  previousRoomSnapshot = currentRoomSnapshot;
+  currentRoomSnapshot = {
+    state: nextRoomState,
+    receivedAtMs: performance.now()
+  };
+}
+
+function drawFrame(frameTimeMs: number): void {
+  const displayedRoomState = getDisplayedRoomState(frameTimeMs);
+  drawScene(context, state, displayedRoomState);
+  window.requestAnimationFrame(drawFrame);
+}
+
+function getDisplayedRoomState(frameTimeMs: number): RoomState | null {
+  if (!currentRoomSnapshot) {
+    return state.roomState;
+  }
+
+  if (!previousRoomSnapshot) {
+    return currentRoomSnapshot.state;
+  }
+
+  if (
+    previousRoomSnapshot.state.status !== 'active' ||
+    currentRoomSnapshot.state.status !== 'active' ||
+    previousRoomSnapshot.state.id !== currentRoomSnapshot.state.id ||
+    previousRoomSnapshot.state.round !== currentRoomSnapshot.state.round
+  ) {
+    return currentRoomSnapshot.state;
+  }
+
+  const snapshotSpanMs = currentRoomSnapshot.receivedAtMs - previousRoomSnapshot.receivedAtMs;
+  if (snapshotSpanMs <= 0) {
+    return currentRoomSnapshot.state;
+  }
+
+  const interpolationAlpha = clamp(
+    (frameTimeMs - currentRoomSnapshot.receivedAtMs) / snapshotSpanMs,
+    0,
+    1
+  );
+
+  return interpolateRoomState(previousRoomSnapshot.state, currentRoomSnapshot.state, interpolationAlpha);
+}
+
+function interpolateRoomState(previousState: RoomState, nextState: RoomState, alpha: number): RoomState {
+  const previousPlayersBySlot = new Map(previousState.players.map((player) => [player.slot, player]));
+  const previousBulletsById = new Map(previousState.bullets.map((bullet) => [bullet.id, bullet]));
+
+  return {
+    ...nextState,
+    players: nextState.players.map((player) => {
+      const previousPlayer = previousPlayersBySlot.get(player.slot);
+      return {
+        ...player,
+        plane: previousPlayer
+          ? interpolatePlaneState(previousPlayer.plane, player.plane, alpha)
+          : player.plane
+      };
+    }),
+    bullets: nextState.bullets.map((bullet) => {
+      const previousBullet = previousBulletsById.get(bullet.id);
+      return previousBullet ? interpolateBulletState(previousBullet, bullet, alpha) : bullet;
+    })
+  };
+}
+
+function interpolatePlaneState(previousPlane: PlaneState, nextPlane: PlaneState, alpha: number): PlaneState {
+  return {
+    ...nextPlane,
+    position: {
+      x: interpolateWrappedCoordinate(
+        previousPlane.position.x,
+        nextPlane.position.x,
+        alpha,
+        GAME_WIDTH + PLANE_WRAP_MARGIN * 2
+      ),
+      y: interpolateNumber(previousPlane.position.y, nextPlane.position.y, alpha)
+    },
+    velocity: {
+      x: interpolateNumber(previousPlane.velocity.x, nextPlane.velocity.x, alpha),
+      y: interpolateNumber(previousPlane.velocity.y, nextPlane.velocity.y, alpha)
+    },
+    angle: interpolateAngle(previousPlane.angle, nextPlane.angle, alpha)
+  };
+}
+
+function interpolateBulletState(previousBullet: BulletState, nextBullet: BulletState, alpha: number): BulletState {
+  return {
+    ...nextBullet,
+    position: {
+      x: interpolateWrappedCoordinate(
+        previousBullet.position.x,
+        nextBullet.position.x,
+        alpha,
+        GAME_WIDTH + BULLET_WRAP_MARGIN * 2
+      ),
+      y: interpolateNumber(previousBullet.position.y, nextBullet.position.y, alpha)
+    },
+    velocity: {
+      x: interpolateNumber(previousBullet.velocity.x, nextBullet.velocity.x, alpha),
+      y: interpolateNumber(previousBullet.velocity.y, nextBullet.velocity.y, alpha)
+    },
+    ttlMs: interpolateNumber(previousBullet.ttlMs, nextBullet.ttlMs, alpha)
+  };
+}
+
+function interpolateNumber(from: number, to: number, alpha: number): number {
+  return from + (to - from) * alpha;
+}
+
+function interpolateAngle(from: number, to: number, alpha: number): number {
+  return from + normalizeAngleDelta(to - from) * alpha;
+}
+
+function normalizeAngleDelta(delta: number): number {
+  let normalizedDelta = delta;
+
+  while (normalizedDelta > Math.PI) {
+    normalizedDelta -= Math.PI * 2;
+  }
+
+  while (normalizedDelta < -Math.PI) {
+    normalizedDelta += Math.PI * 2;
+  }
+
+  return normalizedDelta;
+}
+
+function interpolateWrappedCoordinate(from: number, to: number, alpha: number, wrapSize: number): number {
+  let delta = to - from;
+
+  if (Math.abs(delta) > wrapSize / 2) {
+    delta -= Math.sign(delta) * wrapSize;
+  }
+
+  // Keep interpolation in the same extended wrap domain the server uses.
+  // The renderer is responsible for drawing overlap copies at the visible edges.
+  return from + delta * alpha;
+}
+
+function drawWrappedHorizontally(
+  x: number,
+  horizontalExtent: number,
+  wrapSize: number,
+  drawAtOffset: (xOffset: number) => void
+): void {
+  if (doesHorizontalSpanIntersectScreen(x, horizontalExtent)) {
+    drawAtOffset(0);
+  }
+
+  if (doesHorizontalSpanIntersectScreen(x - wrapSize, horizontalExtent)) {
+    drawAtOffset(-wrapSize);
+  }
+
+  if (doesHorizontalSpanIntersectScreen(x + wrapSize, horizontalExtent)) {
+    drawAtOffset(wrapSize);
+  }
+}
+
+function doesHorizontalSpanIntersectScreen(x: number, horizontalExtent: number): boolean {
+  return x + horizontalExtent > 0 && x - horizontalExtent < GAME_WIDTH;
+}
+
+function getPlaneHorizontalRenderExtent(geometry: PlaneGeometry): number {
+  const polygonGroups = [
+    geometry.fuselageTop,
+    geometry.fuselageBottom,
+    geometry.noseCap,
+    geometry.topWing,
+    geometry.bottomWing,
+    geometry.accentStripe,
+    geometry.tailFin,
+    geometry.tailWing,
+    geometry.cockpit
+  ];
+
+  let maxX = 0;
+
+  for (const polygon of polygonGroups) {
+    for (const point of polygon) {
+      maxX = Math.max(maxX, Math.abs(point.x));
+    }
+  }
+
+  for (const segment of [...geometry.struts, ...geometry.landingGear]) {
+    maxX = Math.max(maxX, Math.abs(segment.start.x), Math.abs(segment.end.x));
+  }
+
+  maxX = Math.max(
+    maxX,
+    Math.abs(geometry.propeller.center.x) + geometry.propeller.radiusX,
+    Math.abs(geometry.spinner.center.x) + geometry.spinner.radius,
+    Math.abs(geometry.wheel.center.x) + geometry.wheel.radius,
+    Math.abs(geometry.wheelHub.center.x) + geometry.wheelHub.radius
+  );
+
+  return maxX + 8;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 function getActivePlaneGeometry(): PlaneGeometry {
@@ -695,11 +953,9 @@ function getVisibleFeedback(): string {
   return state.feedback === 'Waiting for the second pilot to join.' ? '' : state.feedback;
 }
 
-// Room cards are rebuilt from room state on every render.
-// With only two players this is simpler and clearer than diffing small DOM bits.
+// Room cards are mounted once and then updated in place to avoid unnecessary DOM
+// churn during active-round state syncs.
 function renderPlayerList(): void {
-  playerListElement.replaceChildren();
-
   const players = state.roomState?.players ?? PLAYER_SLOTS.map((slot) => ({
     slot,
     connected: false,
@@ -714,66 +970,80 @@ function renderPlayerList(): void {
   const tiedForLead = shouldShowScores && players.filter((player) => player.wins === highestWins).length > 1;
 
   for (const player of players) {
-    const item = document.createElement('li');
-    item.className = 'player-card';
-
-    if (player.slot === state.slot) {
-      item.classList.add('is-current');
+    const refs = playerCardRefs.get(player.slot);
+    if (!refs) {
+      continue;
     }
 
-    const headerRow = document.createElement('div');
-    headerRow.className = 'player-row';
-
-    const name = document.createElement('span');
-    name.className = 'player-name';
-    name.textContent = `${formatSlot(player.slot)} pilot`;
-
-    if (shouldShowScores) {
-      const scoreCluster = document.createElement('div');
-      scoreCluster.className = 'score-cluster';
-
-      const scoreCircle = document.createElement('span');
-      scoreCircle.className = `score-circle ${getScoreTone(player.wins, highestWins, tiedForLead)}`;
-      scoreCircle.textContent = String(player.wins);
-
-      if (player.wins === highestWins && !tiedForLead) {
-        const crown = document.createElement('span');
-        crown.className = 'score-crown';
-        crown.setAttribute('aria-hidden', 'true');
-        scoreCluster.append(crown);
-      }
-
-      scoreCluster.append(scoreCircle);
-      item.append(scoreCluster);
-    }
-
-    const statusStack = document.createElement('div');
-    statusStack.className = 'player-status-stack';
-
-    const badge = document.createElement('span');
-    badge.className = 'player-state';
-    badge.textContent = player.connected ? 'Connected' : 'Open';
-    if (player.connected) {
-      badge.classList.add('is-connected');
-    }
-
-    const marker = document.createElement('span');
-    marker.className = 'player-marker';
-    marker.textContent = player.slot === state.slot ? 'You' : '';
-
-    const note = document.createElement('span');
-    note.className = 'player-detail';
-    note.textContent = player.connected
+    refs.item.classList.toggle('is-current', player.slot === state.slot);
+    refs.scoreCluster.hidden = !shouldShowScores;
+    refs.scoreCircle.className = `score-circle ${getScoreTone(player.wins, highestWins, tiedForLead)}`;
+    refs.scoreCircle.textContent = String(player.wins);
+    refs.crown.hidden = !(shouldShowScores && player.wins === highestWins && !tiedForLead);
+    refs.badge.textContent = player.connected ? 'Connected' : 'Open';
+    refs.badge.classList.toggle('is-connected', player.connected);
+    refs.marker.textContent = player.slot === state.slot ? 'You' : '';
+    refs.detail.textContent = player.connected
       ? player.slot === state.slot
         ? formatPhase(player.plane.phase)
         : `Pilot present. ${formatPhase(player.plane.phase)}.`
       : 'Available for another browser to join.';
-
-    statusStack.append(badge, marker);
-    headerRow.append(name, statusStack);
-    item.append(headerRow, note);
-    playerListElement.append(item);
   }
+}
+
+function createPlayerCard(slot: PlayerSlot): PlayerCardRefs {
+  const item = document.createElement('li');
+  item.className = 'player-card';
+
+  const scoreCluster = document.createElement('div');
+  scoreCluster.className = 'score-cluster';
+
+  const crown = document.createElement('span');
+  crown.className = 'score-crown';
+  crown.hidden = true;
+  crown.setAttribute('aria-hidden', 'true');
+
+  const scoreCircle = document.createElement('span');
+  scoreCircle.className = 'score-circle is-trailing';
+  scoreCircle.textContent = '0';
+
+  scoreCluster.append(crown, scoreCircle);
+  scoreCluster.hidden = true;
+
+  const headerRow = document.createElement('div');
+  headerRow.className = 'player-row';
+
+  const name = document.createElement('span');
+  name.className = 'player-name';
+  name.textContent = `${formatSlot(slot)} pilot`;
+
+  const statusStack = document.createElement('div');
+  statusStack.className = 'player-status-stack';
+
+  const badge = document.createElement('span');
+  badge.className = 'player-state';
+  badge.textContent = 'Open';
+
+  const marker = document.createElement('span');
+  marker.className = 'player-marker';
+
+  const detail = document.createElement('span');
+  detail.className = 'player-detail';
+  detail.textContent = 'Available for another browser to join.';
+
+  statusStack.append(badge, marker);
+  headerRow.append(name, statusStack);
+  item.append(scoreCluster, headerRow, detail);
+
+  return {
+    item,
+    scoreCluster,
+    scoreCircle,
+    crown,
+    badge,
+    marker,
+    detail
+  };
 }
 
 // URL state is kept in sync with the current room id so refresh and share-link
@@ -798,6 +1068,7 @@ function resetRoomView(feedback: string): void {
   state.phase = 'error';
   state.feedback = feedback;
   setRoom(null);
+  clearRoomSnapshots();
 }
 
 function extractRoomId(value: string): string | null {
@@ -861,6 +1132,7 @@ function connectToRoom(roomId: string): void {
   state.phase = 'connecting';
   state.feedback = 'Opening match…';
   localInput = createDefaultInputState();
+  clearRoomSnapshots();
   render();
 
   const nextSocket = new WebSocket(buildWebSocketUrl(roomId));
@@ -918,7 +1190,7 @@ function handleServerMessage(message: ServerMessage): void {
       return;
 
     case 'room_state':
-      state.roomState = message.payload;
+      setCurrentRoomState(message.payload);
       state.phase = 'connected';
       if (message.payload.status === 'waiting') {
         state.feedback = '';
@@ -1413,6 +1685,7 @@ window.addEventListener('beforeunload', () => {
 });
 
 render();
+window.requestAnimationFrame(drawFrame);
 
 if (initialRoomId) {
   state.setupPanelMode = 'join';
