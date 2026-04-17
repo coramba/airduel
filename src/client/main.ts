@@ -22,9 +22,13 @@ import {
   PLANE_GEOMETRY,
   getPlaneShapeOrigin,
   type PlaneGeometry,
-  type PlanePoint,
-  type PlaneSegment
+  type PlanePoint
 } from '../shared/plane-shape.js';
+import {
+  DEFAULT_PLANE_STATS,
+  PLANE_STATS_FIELDS,
+  type PlaneStats
+} from '../shared/plane-stats.js';
 
 // Browser runtime for the game client.
 // This file owns:
@@ -61,62 +65,35 @@ interface PlayerCardRefs {
   detail: HTMLSpanElement;
 }
 
-type PlanePalette = {
-  fuselageLight: string;
-  fuselageMid: string;
-  fuselageDark: string;
-  accent: string;
-  accentSoft: string;
-  canopy: string;
-  metal: string;
-  propeller: string;
-  glow: string;
-  tire: string;
+const PLAYER_GLOW: Record<PlayerSlot, string> = {
+  left:  'rgba(212, 85, 45, 0.32)',
+  right: 'rgba(42, 93, 148, 0.3)'
+};
+
+function loadImage(src: string): HTMLImageElement {
+  const img = new Image();
+  img.src = src;
+  return img;
+}
+
+const PLANE_IMAGES: Record<PlayerSlot, HTMLImageElement> = {
+  left: loadImage('/images/plane2.png'),
+  right: loadImage('/images/plane1.png')
 };
 
 const PLANE_GRID_EXTENT = 100;
 const PLANE_GRID_STEP = 10;
 const GRID_TOGGLE_DOUBLE_PRESS_MS = 360;
 
-const PLAYER_COLORS: Record<PlayerSlot, PlanePalette> = {
-  left: {
-    fuselageLight: '#f27263',
-    fuselageMid: '#d4552d',
-    fuselageDark: '#8c2f1f',
-    accent: '#702418',
-    accentSoft: '#f5a18f',
-    canopy: '#5e2a23',
-    metal: '#4f2b22',
-    propeller: '#c93429',
-    glow: 'rgba(212, 85, 45, 0.32)',
-    tire: '#2f2a2a'
-  },
-  right: {
-    fuselageLight: '#74b3f2',
-    fuselageMid: '#2a5d94',
-    fuselageDark: '#173a60',
-    accent: '#122e4c',
-    accentSoft: '#a5d1f8',
-    canopy: '#243d5a',
-    metal: '#243645',
-    propeller: '#cf4335',
-    glow: 'rgba(42, 93, 148, 0.3)',
-    tire: '#262224'
-  }
-};
 
 // Reconnect tokens are stored in sessionStorage so a page reload can reclaim the
 // same live slot without exposing that token in shared links.
-function getReconnectTokenStorageKey(roomId: string): string {
-  return `airduel:reconnect:${roomId}`;
-}
-
 function loadReconnectToken(roomId: string): string | null {
-  return window.sessionStorage.getItem(getReconnectTokenStorageKey(roomId));
+  return window.sessionStorage.getItem(`airduel:reconnect:${roomId}`);
 }
 
 function saveReconnectToken(roomId: string, reconnectToken: string): void {
-  window.sessionStorage.setItem(getReconnectTokenStorageKey(roomId), reconnectToken);
+  window.sessionStorage.setItem(`airduel:reconnect:${roomId}`, reconnectToken);
 }
 
 function requireElement<T extends HTMLElement>(selector: string): T {
@@ -268,13 +245,12 @@ function drawPlane(
   player: PlayerState,
   isCurrentPlayer: boolean
 ): void {
-  // Plane rendering stays purely cosmetic. The server still owns the movement,
-  // hit logic, and exact state; the client just draws a readable biplane shell.
-  const colors = PLAYER_COLORS[player.slot];
+  const glow = PLAYER_GLOW[player.slot];
   const { plane } = player;
   const isMirrored = player.slot === 'right';
   const geometry = getActivePlaneGeometry();
-  const horizontalExtent = getPlaneHorizontalRenderExtent(geometry);
+  const img = PLANE_IMAGES[player.slot];
+  const horizontalExtent = getPlaneHorizontalRenderExtent(geometry, img);
 
   if (plane.phase === 'destroyed') {
     drawWrappedHorizontally(
@@ -282,7 +258,7 @@ function drawPlane(
       horizontalExtent,
       GAME_WIDTH + PLANE_WRAP_MARGIN * 2,
       (xOffset) => {
-        drawExplosion(context, plane.position.x + xOffset, plane.position.y, colors.glow);
+        drawExplosion(context, plane.position.x + xOffset, plane.position.y, glow);
       }
     );
     return;
@@ -313,71 +289,17 @@ function drawPlane(
         context.rotate(plane.angle);
       }
 
-      context.shadowBlur = isCurrentPlayer ? 22 : 0;
-      context.shadowColor = colors.glow;
-
-      context.fillStyle = colors.fuselageLight;
-      fillPolygon(context, geometry.fuselageTop);
-
-      context.fillStyle = colors.fuselageMid;
-      fillPolygon(context, geometry.fuselageBottom);
-
-      context.fillStyle = colors.accentSoft;
-      fillPolygon(context, geometry.noseCap);
-
-      context.fillStyle = colors.fuselageLight;
-      fillPolygon(context, geometry.topWing);
-
-      context.fillStyle = colors.accent;
-      fillPolygon(context, geometry.accentStripe);
-
-      context.fillStyle = colors.fuselageDark;
-      fillPolygon(context, geometry.tailFin);
-
-      context.fillStyle = colors.accentSoft;
-      fillPolygon(context, geometry.tailWing);
-
-      context.fillStyle = colors.fuselageMid;
-      fillPolygon(context, geometry.bottomWing);
-
-      context.fillStyle = colors.fuselageDark;
-      context.strokeStyle = colors.fuselageDark;
-      context.lineWidth = 2.5;
-      context.lineCap = 'round';
-      for (const strut of geometry.struts) {
-        strokeSegment(context, strut);
+      if (img.complete && img.naturalWidth > 0) {
+        const pivot = geometry.imagePivot ?? { x: img.naturalWidth / 2, y: img.naturalHeight / 2 };
+        context.shadowBlur = isCurrentPlayer ? 22 : 0;
+        context.shadowColor = glow;
+        context.drawImage(img, -pivot.x, -pivot.y);
+        context.shadowBlur = 0;
       }
-
-      context.strokeStyle = colors.metal;
-      for (const gearSegment of geometry.landingGear) {
-        strokeSegment(context, gearSegment);
-      }
-
-      context.fillStyle = colors.tire;
-      fillCircle(context, geometry.wheel.center, geometry.wheel.radius);
-
-      context.fillStyle = '#dad7db';
-      fillCircle(context, geometry.wheelHub.center, geometry.wheelHub.radius);
-
-      context.fillStyle = 'rgba(255, 247, 222, 0.95)';
-      fillPolygon(context, geometry.cockpit);
-      context.strokeStyle = colors.canopy;
-      context.lineWidth = 2;
-      strokePolygon(context, geometry.cockpit);
-
-      context.fillStyle = colors.propeller;
-      fillEllipse(
-        context,
-        geometry.propeller.center,
-        geometry.propeller.radiusX,
-        geometry.propeller.radiusY
-      );
-
-      context.fillStyle = '#b53b2f';
-      fillCircle(context, geometry.spinner.center, geometry.spinner.radius);
 
       if (showPlaneGrid) {
         drawPlaneGridOverlay(context, isMirrored);
+        drawCollisionOverlay(context);
       }
 
       context.restore();
@@ -385,9 +307,9 @@ function drawPlane(
   );
 }
 
-function fillPolygon(context: CanvasRenderingContext2D, points: readonly PlanePoint[]): void {
+function buildPolygonPath(context: CanvasRenderingContext2D, points: readonly PlanePoint[]): boolean {
   if (points.length === 0) {
-    return;
+    return false;
   }
 
   context.beginPath();
@@ -398,47 +320,7 @@ function fillPolygon(context: CanvasRenderingContext2D, points: readonly PlanePo
   }
 
   context.closePath();
-  context.fill();
-}
-
-function strokePolygon(context: CanvasRenderingContext2D, points: readonly PlanePoint[]): void {
-  if (points.length === 0) {
-    return;
-  }
-
-  context.beginPath();
-  context.moveTo(points[0].x, points[0].y);
-
-  for (let index = 1; index < points.length; index += 1) {
-    context.lineTo(points[index].x, points[index].y);
-  }
-
-  context.closePath();
-  context.stroke();
-}
-
-function strokeSegment(context: CanvasRenderingContext2D, segment: PlaneSegment): void {
-  context.beginPath();
-  context.moveTo(segment.start.x, segment.start.y);
-  context.lineTo(segment.end.x, segment.end.y);
-  context.stroke();
-}
-
-function fillCircle(context: CanvasRenderingContext2D, center: PlanePoint, radius: number): void {
-  context.beginPath();
-  context.arc(center.x, center.y, radius, 0, Math.PI * 2);
-  context.fill();
-}
-
-function fillEllipse(
-  context: CanvasRenderingContext2D,
-  center: PlanePoint,
-  radiusX: number,
-  radiusY: number
-): void {
-  context.beginPath();
-  context.ellipse(center.x, center.y, radiusX, radiusY, 0, 0, Math.PI * 2);
-  context.fill();
+  return true;
 }
 
 function drawPlaneGridOverlay(context: CanvasRenderingContext2D, isMirrored: boolean): void {
@@ -500,6 +382,21 @@ function drawPlaneGridLabel(
   context.restore();
 }
 
+function drawCollisionOverlay(context: CanvasRenderingContext2D): void {
+  const geometry = getActivePlaneGeometry();
+  context.save();
+  context.strokeStyle = 'rgba(255, 40, 40, 0.9)';
+  context.lineWidth = 1.5;
+  context.setLineDash([4, 3]);
+  for (const polygon of geometry.collisionPolygons) {
+    if (buildPolygonPath(context, polygon as PlanePoint[])) {
+      context.stroke();
+    }
+  }
+  context.setLineDash([]);
+  context.restore();
+}
+
 function drawExplosion(context: CanvasRenderingContext2D, x: number, y: number, glow: string): void {
   context.save();
   context.fillStyle = glow;
@@ -520,12 +417,12 @@ function drawExplosion(context: CanvasRenderingContext2D, x: number, y: number, 
 function drawBullet(context: CanvasRenderingContext2D, bullet: BulletState): void {
   drawWrappedHorizontally(
     bullet.position.x,
-    4,
+    bullet.radius,
     GAME_WIDTH + BULLET_WRAP_MARGIN * 2,
     (xOffset) => {
       context.fillStyle = '#d94133';
       context.beginPath();
-      context.arc(bullet.position.x + xOffset, bullet.position.y, 4, 0, Math.PI * 2);
+      context.arc(bullet.position.x + xOffset, bullet.position.y, bullet.radius, 0, Math.PI * 2);
       context.fill();
     }
   );
@@ -588,6 +485,8 @@ function drawWrappedText(
 const canvasRoot = requireElement<HTMLDivElement>('#canvas-root');
 const createRoomButton = requireElement<HTMLButtonElement>('#create-room-button');
 const secondaryActionButton = requireElement<HTMLButtonElement>('#secondary-action-button');
+const rematchRow = requireElement<HTMLDivElement>('#rematch-row');
+const rematchButton = requireElement<HTMLButtonElement>('#rematch-button');
 const setupForm = requireElement<HTMLFormElement>('#setup-form');
 const setupFieldLabel = requireElement<HTMLLabelElement>('#setup-field-label');
 const joinRoomInput = requireElement<HTMLInputElement>('#join-room-input');
@@ -596,8 +495,10 @@ const feedbackElement = requireElement<HTMLParagraphElement>('#session-feedback'
 const playerListElement = requireElement<HTMLUListElement>('#player-list');
 const rematchStatusElement = requireElement<HTMLParagraphElement>('#rematch-status');
 const planeDebugPanel = requireElement<HTMLDivElement>('#plane-debug-panel');
+const planeTelemetryContainer = requireElement<HTMLDivElement>('#plane-telemetry');
 const planeGeometryEditor = requireElement<HTMLTextAreaElement>('#plane-geometry-editor');
 const planeGeometryFeedbackElement = requireElement<HTMLParagraphElement>('#plane-geometry-feedback');
+const planeStatsContainer = requireElement<HTMLDivElement>('#plane-stats-container');
 const canvas = createCanvas();
 const canvasContext = canvas.getContext('2d');
 
@@ -637,6 +538,136 @@ let editablePlaneGeometry: PlaneGeometry | null = null;
 let previousRoomSnapshot: RoomSnapshot | null = null;
 let currentRoomSnapshot: RoomSnapshot | null = null;
 
+const editablePlaneStats: Record<PlayerSlot, PlaneStats> = {
+  left:  { ...DEFAULT_PLANE_STATS.left  },
+  right: { ...DEFAULT_PLANE_STATS.right }
+};
+
+type StatsInputMap = Record<keyof PlaneStats, HTMLInputElement>;
+const statsInputs: Partial<Record<PlayerSlot, StatsInputMap>> = {};
+
+const TELEMETRY_ROWS = [
+  { key: 'speed',    label: 'Speed'        },
+  { key: 'turnRate', label: 'Turn rate'    },
+  { key: 'vx',       label: 'Velocity X'  },
+  { key: 'vy',       label: 'Velocity Y'  },
+  { key: 'accel',    label: 'Acceleration' },
+] as const;
+
+type TelemetryKey = (typeof TELEMETRY_ROWS)[number]['key'];
+const telemetrySpans = {} as Record<TelemetryKey, HTMLSpanElement>;
+
+function buildTelemetry(container: HTMLElement): void {
+  for (const row of TELEMETRY_ROWS) {
+    const label = document.createElement('span');
+    label.className = 'tel-label';
+    label.textContent = row.label;
+
+    const value = document.createElement('span');
+    value.className = 'tel-value';
+    value.textContent = '—';
+
+    telemetrySpans[row.key] = value;
+    container.append(label, value);
+  }
+}
+
+function updateTelemetry(): void {
+  if (!showPlaneGrid) {
+    return;
+  }
+
+  const { slot, roomState } = state;
+
+  if (!slot || !roomState || roomState.status !== 'active') {
+    for (const row of TELEMETRY_ROWS) {
+      telemetrySpans[row.key].textContent = '—';
+    }
+    return;
+  }
+
+  const player = roomState.players.find((p) => p.slot === slot);
+  if (!player) {
+    return;
+  }
+
+  const { plane } = player;
+  const stats = editablePlaneStats[slot];
+  const speed = Math.hypot(plane.velocity.x, plane.velocity.y);
+  const effectiveTurnRate = speed >= stats.airSpeed
+    ? stats.turnRate
+    : stats.turnRate * Math.max(0, (speed - stats.airSpeed / 2) / (stats.airSpeed / 2));
+
+  telemetrySpans.speed.textContent    = `${speed.toFixed(1)} px/s`;
+  telemetrySpans.turnRate.textContent = `${effectiveTurnRate.toFixed(2)} rad/s`;
+  telemetrySpans.vx.textContent       = `${plane.velocity.x.toFixed(1)} px/s`;
+  telemetrySpans.vy.textContent       = `${plane.velocity.y.toFixed(1)} px/s`;
+  telemetrySpans.accel.textContent    = `${stats.acceleration} px/s²`;
+}
+
+function sendPlaneStats(slot: PlayerSlot): void {
+  if (!socket || socket.readyState !== WebSocket.OPEN) {
+    return;
+  }
+  socket.send(JSON.stringify({
+    type: 'plane_stats_update',
+    payload: { slot, stats: editablePlaneStats[slot] }
+  }));
+}
+
+function buildStatsEditor(container: HTMLElement): void {
+  const grid = document.createElement('div');
+  grid.className = 'stats-editor-grid';
+
+  for (const slot of PLAYER_SLOTS) {
+    const column = document.createElement('div');
+    column.className = 'stats-column';
+
+    const heading = document.createElement('div');
+    heading.className = `stats-slot-heading stats-slot-${slot}`;
+    heading.textContent = `${slot === 'left' ? 'Left' : 'Right'} Plane`;
+    column.append(heading);
+
+    const inputs: Partial<StatsInputMap> = {};
+
+    for (const field of PLANE_STATS_FIELDS) {
+      const fieldDiv = document.createElement('div');
+      fieldDiv.className = 'stats-field';
+
+      const label = document.createElement('label');
+      label.className = 'stats-field-label';
+      label.textContent = field.label;
+
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.className = 'stats-input';
+      input.step = String(field.step);
+      input.min = String(field.step);
+      input.value = String(DEFAULT_PLANE_STATS[slot][field.key]);
+
+      input.addEventListener('change', () => {
+        const parsed = parseFloat(input.value);
+        if (Number.isFinite(parsed) && parsed > 0) {
+          editablePlaneStats[slot] = { ...editablePlaneStats[slot], [field.key]: parsed };
+          sendPlaneStats(slot);
+        } else {
+          input.value = String(editablePlaneStats[slot][field.key]);
+        }
+      });
+
+      label.append(input);
+      fieldDiv.append(label);
+      column.append(fieldDiv);
+      inputs[field.key] = input;
+    }
+
+    statsInputs[slot] = inputs as StatsInputMap;
+    grid.append(column);
+  }
+
+  container.append(grid);
+}
+
 // `render()` is the single place that synchronizes DOM controls from app state.
 // Gameplay visuals are rendered continuously by `requestAnimationFrame`, while
 // this UI sync only updates the DOM controls and side panel.
@@ -644,13 +675,12 @@ function render(): void {
   const isBusy = state.phase === 'creating' || state.phase === 'connecting';
   createRoomButton.disabled = isBusy;
 
-  const rematchVisible = shouldShowRematchAction();
-  secondaryActionButton.textContent = rematchVisible
-    ? hasRequestedRematch()
-      ? 'Rematch Requested'
-      : 'Rematch'
-    : 'Join by Code';
-  secondaryActionButton.disabled = rematchVisible ? !canRequestRematch() : isBusy;
+  secondaryActionButton.disabled = isBusy;
+
+  const rematchVisible = isMatchStarted();
+  rematchRow.hidden = !rematchVisible;
+  rematchButton.textContent = hasRequestedRematch() ? 'Rematch Requested' : 'Rematch';
+  rematchButton.disabled = !canRequestRematch();
 
   const setupVisible = shouldShowSetupPanel();
   setupForm.hidden = !setupVisible;
@@ -675,6 +705,19 @@ function render(): void {
   planeGeometryFeedbackElement.textContent = planeGeometryFeedback;
   planeGeometryFeedbackElement.hidden = planeGeometryFeedback === '';
 
+  for (const slot of PLAYER_SLOTS) {
+    const inputMap = statsInputs[slot];
+    if (!inputMap) {
+      continue;
+    }
+    for (const { key } of PLANE_STATS_FIELDS) {
+      const input = inputMap[key];
+      if (document.activeElement !== input) {
+        input.value = String(editablePlaneStats[slot][key]);
+      }
+    }
+  }
+
   renderPlayerList();
 }
 
@@ -695,6 +738,7 @@ function setCurrentRoomState(nextRoomState: RoomState): void {
 function drawFrame(frameTimeMs: number): void {
   const displayedRoomState = getDisplayedRoomState(frameTimeMs);
   drawScene(context, state, displayedRoomState);
+  updateTelemetry();
   window.requestAnimationFrame(drawFrame);
 }
 
@@ -849,39 +893,19 @@ function doesHorizontalSpanIntersectScreen(x: number, horizontalExtent: number):
   return x + horizontalExtent > 0 && x - horizontalExtent < GAME_WIDTH;
 }
 
-function getPlaneHorizontalRenderExtent(geometry: PlaneGeometry): number {
-  const polygonGroups = [
-    geometry.fuselageTop,
-    geometry.fuselageBottom,
-    geometry.noseCap,
-    geometry.topWing,
-    geometry.bottomWing,
-    geometry.accentStripe,
-    geometry.tailFin,
-    geometry.tailWing,
-    geometry.cockpit
-  ];
+function getPlaneHorizontalRenderExtent(geometry: PlaneGeometry, img?: HTMLImageElement): number {
+  if (img && img.complete && img.naturalWidth > 0) {
+    const pivot = geometry.imagePivot ?? { x: img.naturalWidth / 2, y: img.naturalHeight / 2 };
+    return Math.max(pivot.x, img.naturalWidth - pivot.x) + 8;
+  }
 
+  // Fallback: derive extent from collision polygons when the image is not ready.
   let maxX = 0;
-
-  for (const polygon of polygonGroups) {
+  for (const polygon of geometry.collisionPolygons) {
     for (const point of polygon) {
       maxX = Math.max(maxX, Math.abs(point.x));
     }
   }
-
-  for (const segment of [...geometry.struts, ...geometry.landingGear]) {
-    maxX = Math.max(maxX, Math.abs(segment.start.x), Math.abs(segment.end.x));
-  }
-
-  maxX = Math.max(
-    maxX,
-    Math.abs(geometry.propeller.center.x) + geometry.propeller.radiusX,
-    Math.abs(geometry.spinner.center.x) + geometry.spinner.radius,
-    Math.abs(geometry.wheel.center.x) + geometry.wheel.radius,
-    Math.abs(geometry.wheelHub.center.x) + geometry.wheelHub.radius
-  );
-
   return maxX + 8;
 }
 
@@ -923,10 +947,6 @@ function getWaitingHudStatusText(appState: AppState): string {
 
 function isMatchStarted(): boolean {
   return Boolean(state.roomState && state.roomState.status !== 'waiting');
-}
-
-function shouldShowRematchAction(): boolean {
-  return isMatchStarted();
 }
 
 function shouldShowSetupPanel(): boolean {
@@ -1278,8 +1298,9 @@ function getRoundOverlayMessage(appState: AppState): string {
       : 'Waiting for the second player to confirm the rematch.';
   }
 
-  const baseMessage = appState.roomState.message ?? 'Both pilots must request rematch.';
-  return `${baseMessage} Press Y or use Rematch.`;
+  return getRematchPromptMessage(
+    appState.roomState.message ?? 'Both pilots must request rematch.'
+  );
 }
 
 function getScoreTone(wins: number, highestWins: number, tiedForLead: boolean): string {
@@ -1333,7 +1354,13 @@ function getRematchStatusText(): string {
       : 'Waiting for the second player to confirm the rematch.';
   }
 
-  return `${state.roomState.message ?? 'Request rematch to start the next round.'} Press Y or use Rematch.`;
+  return getRematchPromptMessage(
+    state.roomState.message ?? 'Request rematch to start the next round.'
+  );
+}
+
+function getRematchPromptMessage(baseMessage: string): string {
+  return `${baseMessage} Press Y or use Rematch.`;
 }
 
 // Input section.
@@ -1488,22 +1515,8 @@ function isPlaneGeometry(value: unknown): value is PlaneGeometry {
   const geometry = value as Record<string, unknown>;
   return (
     typeof geometry.renderOffsetY === 'number' &&
+    (!geometry.imagePivot || isPlanePoint(geometry.imagePivot)) &&
     isPlanePoint(geometry.muzzlePoint) &&
-    isPlanePointArray(geometry.fuselageTop) &&
-    isPlanePointArray(geometry.fuselageBottom) &&
-    isPlanePointArray(geometry.noseCap) &&
-    isPlanePointArray(geometry.topWing) &&
-    isPlanePointArray(geometry.bottomWing) &&
-    isPlanePointArray(geometry.accentStripe) &&
-    isPlanePointArray(geometry.tailFin) &&
-    isPlanePointArray(geometry.tailWing) &&
-    isPlanePointArray(geometry.cockpit) &&
-    isPlaneSegmentArray(geometry.struts) &&
-    isPlaneSegmentArray(geometry.landingGear) &&
-    isPlaneEllipse(geometry.propeller) &&
-    isPlaneCircle(geometry.spinner) &&
-    isPlaneCircle(geometry.wheel) &&
-    isPlaneCircle(geometry.wheelHub) &&
     isCollisionPolygonArray(geometry.collisionPolygons)
   );
 }
@@ -1519,42 +1532,6 @@ function isPlanePoint(value: unknown): value is PlanePoint {
 
 function isPlanePointArray(value: unknown): value is PlanePoint[] {
   return Array.isArray(value) && value.every((point) => isPlanePoint(point));
-}
-
-function isPlaneSegmentArray(value: unknown): value is PlaneSegment[] {
-  return (
-    Array.isArray(value) &&
-    value.every((segment) => {
-      if (!segment || typeof segment !== 'object') {
-        return false;
-      }
-
-      const candidate = segment as Record<string, unknown>;
-      return isPlanePoint(candidate.start) && isPlanePoint(candidate.end);
-    })
-  );
-}
-
-function isPlaneEllipse(value: unknown): value is PlaneGeometry['propeller'] {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-
-  const ellipse = value as Record<string, unknown>;
-  return (
-    isPlanePoint(ellipse.center) &&
-    typeof ellipse.radiusX === 'number' &&
-    typeof ellipse.radiusY === 'number'
-  );
-}
-
-function isPlaneCircle(value: unknown): value is PlaneGeometry['spinner'] {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-
-  const circle = value as Record<string, unknown>;
-  return isPlanePoint(circle.center) && typeof circle.radius === 'number';
 }
 
 function isCollisionPolygonArray(value: unknown): value is PlanePoint[][] {
@@ -1634,12 +1611,11 @@ createRoomButton.addEventListener('click', () => {
 });
 
 secondaryActionButton.addEventListener('click', () => {
-  if (shouldShowRematchAction()) {
-    sendRematchRequest();
-    return;
-  }
-
   showJoinSetup();
+});
+
+rematchButton.addEventListener('click', () => {
+  sendRematchRequest();
 });
 
 setupForm.addEventListener('submit', (event) => {
@@ -1684,6 +1660,8 @@ window.addEventListener('beforeunload', () => {
   closeCurrentSocket();
 });
 
+buildTelemetry(planeTelemetryContainer);
+buildStatsEditor(planeStatsContainer);
 render();
 window.requestAnimationFrame(drawFrame);
 

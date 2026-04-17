@@ -1,11 +1,13 @@
+import type { PlaneStats } from './plane-stats.js';
+
 // Shared constants, state shapes, and message contracts.
 // Both the browser client and the Node server import this file so that
 // simulation state, room lifecycle state, and websocket payloads stay aligned.
 export const GAME_WIDTH = 960;
 export const GAME_HEIGHT = 648;
 export const GROUND_HEIGHT = 72;
-export const RUNWAY_HEIGHT = 14;
-export const RUNWAY_PLANE_Y = GAME_HEIGHT - GROUND_HEIGHT - RUNWAY_HEIGHT / 2 - 6;
+export const RUNWAY_HEIGHT = 0;
+export const RUNWAY_PLANE_Y = GAME_HEIGHT - GROUND_HEIGHT - RUNWAY_HEIGHT / 2;
 export const PLANE_WRAP_MARGIN = 24;
 export const BULLET_WRAP_MARGIN = 80;
 
@@ -52,6 +54,7 @@ export interface BulletState {
   position: Vector2;
   velocity: Vector2;
   ttlMs: number;
+  radius: number;
 }
 
 export interface PlayerState {
@@ -87,6 +90,10 @@ export type ClientMessage =
     }
   | {
       type: 'rematch_requested';
+    }
+  | {
+      type: 'plane_stats_update';
+      payload: { slot: PlayerSlot; stats: PlaneStats };
     };
 
 export type ServerMessage =
@@ -122,7 +129,8 @@ export function createDefaultInputState(): InputState {
 // Planes always reset to a known runway spawn position.
 // The server reuses this for new rooms, rematches, and disconnect resets.
 export function createDefaultPlaneState(slot: PlayerSlot): PlaneState {
-  const x = slot === 'left' ? 96 : GAME_WIDTH - 96;
+  const START_MARGIN = 48;
+  const x = slot === 'left' ? START_MARGIN : GAME_WIDTH - START_MARGIN;
 
   return {
     position: { x, y: RUNWAY_PLANE_Y },

@@ -33,6 +33,11 @@
                 Join by Code
               </button>
             </div>
+            <div id="rematch-row" class="action-row" hidden>
+              <button id="rematch-button" class="button button-green button-full" type="button">
+                Rematch
+              </button>
+            </div>
 
             <form id="setup-form" class="join-form" hidden>
               <label id="setup-field-label" class="field-label" for="join-room-input">
@@ -54,9 +59,25 @@
           </div>
 
           <div class="panel-block">
-            <h2>Room</h2>
             <ul id="player-list" class="player-list"></ul>
             <p id="rematch-status" class="feedback" aria-live="polite"></p>
+          </div>
+
+          <div id="plane-debug-panel" class="panel-block" hidden>
+            <h2>Plane Debug</h2>
+            <div id="plane-telemetry" class="telemetry-grid"></div>
+            <p class="debug-copy">
+              Double-press <code>X</code> to toggle the plane grid. Edit the geometry JSON or tweak per-plane stats below — changes take effect live.
+            </p>
+            <label class="field-label" for="plane-geometry-editor">Plane geometry JSON</label>
+            <textarea
+              id="plane-geometry-editor"
+              class="debug-textarea"
+              spellcheck="false"
+            ></textarea>
+            <p id="plane-geometry-feedback" class="feedback" aria-live="polite"></p>
+            <p class="debug-section-heading">Plane stats</p>
+            <div id="plane-stats-container"></div>
           </div>
 
           <div class="panel-block">
@@ -68,20 +89,6 @@
               <li><strong>Fire:</strong> hold <code>Control</code></li>
               <li><strong>Replay:</strong> press <code>Y</code> or use Rematch after a round ends</li>
             </ul>
-          </div>
-
-          <div id="plane-debug-panel" class="panel-block" hidden>
-            <h2>Plane Debug</h2>
-            <p class="debug-copy">
-              Double-press <code>X</code> to toggle the plane grid. Edit the geometry JSON below to preview changes live in this browser.
-            </p>
-            <label class="field-label" for="plane-geometry-editor">Plane geometry JSON</label>
-            <textarea
-              id="plane-geometry-editor"
-              class="debug-textarea"
-              spellcheck="false"
-            ></textarea>
-            <p id="plane-geometry-feedback" class="feedback" aria-live="polite"></p>
           </div>
         </section>
       </main>

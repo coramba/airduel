@@ -128,6 +128,21 @@ h1 {
   gap: 10px;
 }
 
+.action-row + .action-row {
+  margin-top: 10px;
+}
+
+.button-full {
+  grid-column: 1 / -1;
+}
+
+.button-green {
+  border-color: #2a6e1a;
+  background: linear-gradient(180deg, #6fc84a 0%, #3e9022 100%);
+  color: #f0fff0;
+  font-weight: 700;
+}
+
 .join-form {
   margin-top: 16px;
 }
@@ -153,9 +168,12 @@ h1 {
 }
 
 .feedback {
-  min-height: 1.5em;
   margin-bottom: 0;
   color: #8a4f18;
+}
+
+.feedback:empty {
+  display: none;
 }
 
 .player-list {
@@ -163,7 +181,6 @@ h1 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   padding: 0;
-  margin-top: 26px;
   margin-bottom: 0;
   list-style: none;
 }
@@ -299,6 +316,74 @@ h1 {
   color: inherit;
   font: 13px/1.45 "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
   resize: vertical;
+}
+
+.telemetry-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 14px;
+  margin-bottom: 14px;
+  font-size: 0.83rem;
+}
+
+.tel-label {
+  color: #5e7588;
+  white-space: nowrap;
+}
+
+.tel-value {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-weight: 600;
+  color: #15314b;
+}
+
+.debug-section-heading {
+  margin: 16px 0 8px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #5e7588;
+}
+
+.stats-editor-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.stats-slot-heading {
+  padding: 3px 7px;
+  border-radius: 5px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.stats-slot-left  { background: rgba(212, 85, 45, 0.14); color: #8c2f1f; }
+.stats-slot-right { background: rgba(42, 93, 148, 0.14); color: #173a60; }
+
+.stats-field {
+  margin-bottom: 5px;
+}
+
+.stats-field-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: #3a5068;
+}
+
+.stats-input {
+  width: 68px;
+  padding: 2px 6px;
+  border: 1px solid rgba(21, 49, 75, 0.2);
+  border-radius: 5px;
+  font-size: 0.8rem;
+  text-align: right;
+  background: rgba(255, 255, 255, 0.9);
+  color: inherit;
+  flex-shrink: 0;
 }
 
 @media (min-width: 860px) {

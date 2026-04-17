@@ -12,6 +12,7 @@ import {
   type RoomState,
   type ServerErrorCode
 } from '../shared/game.js';
+import { DEFAULT_PLANE_STATS, type PlaneStats } from '../shared/plane-stats.js';
 
 // RoomRegistry owns all long-lived multiplayer state that is not part of the
 // frame-by-frame flight simulation:
@@ -39,6 +40,9 @@ export interface RoomRecord {
   // Each slot gets a private reconnect token. A reconnecting browser must
   // present the matching token to reclaim a live slot during the grace window.
   reconnectTokens: Record<PlayerSlot, string>;
+  // Per-slot simulation parameters. Starts from defaults; debug clients can
+  // update them live via the plane_stats_update websocket message.
+  planeStats: Record<PlayerSlot, PlaneStats>;
 }
 
 export type JoinRoomResult =
@@ -89,6 +93,10 @@ export class RoomRegistry {
       reconnectTokens: {
         left: createReconnectToken(),
         right: createReconnectToken()
+      },
+      planeStats: {
+        left:  { ...DEFAULT_PLANE_STATS.left  },
+        right: { ...DEFAULT_PLANE_STATS.right }
       }
     };
 
@@ -255,6 +263,13 @@ export class RoomRegistry {
     }
 
     return room;
+  }
+
+  updatePlaneStats(roomId: string, slot: PlayerSlot, stats: PlaneStats): void {
+    const room = this.getRoom(roomId);
+    if (room) {
+      room.planeStats[slot] = { ...stats };
+    }
   }
 
   cleanupExpiredRooms(): void {

@@ -8,6 +8,7 @@ import {
   RUNWAY_HEIGHT,
   RUNWAY_PLANE_Y,
   createDefaultInputState,
+  createDefaultPlaneState,
   type BulletState,
   type PlaneState,
   type PlayerSlot,
@@ -20,6 +21,7 @@ import {
   transformPlanePolygon,
   type PlanePoint
 } from '../shared/plane-shape.js';
+import type { PlaneStats } from '../shared/plane-stats.js';
 import type { RoomRecord } from './room-registry.js';
 
 // Authoritative round simulation.
@@ -27,24 +29,9 @@ import type { RoomRecord } from './room-registry.js';
 // place where movement, firing, collisions, and score-awarding decisions happen.
 export const SIMULATION_TICK_MS = 1000 / 30;
 
-// Gameplay tuning constants live together here so future balance changes do not
-// require scanning the movement code below.
+// Fixed simulation constants that are not exposed for per-plane tuning.
 const DT_SECONDS = SIMULATION_TICK_MS / 1000;
-const AIR_SPEED = 240;
-const RUNWAY_SPEED = 160;
-const TURN_RATE = 2.6;
-const TAKEOFF_ANGLE = 0.42;
-const MIN_RUNWAY_TIME_MS = 650;
-const BULLET_SPEED = 440;
-const DEFAULT_BULLET_MAX_DISTANCE = GAME_WIDTH / 2;
-const FIRE_COOLDOWN_MS = readPositiveNumber(process.env.FIRE_COOLDOWN_MS, 240);
-const BULLET_MAX_DISTANCE = readPositiveNumber(
-  process.env.BULLET_MAX_DISTANCE,
-  DEFAULT_BULLET_MAX_DISTANCE
-);
-const BULLET_TTL_MS = (BULLET_MAX_DISTANCE / BULLET_SPEED) * 1000;
 const SKY_MARGIN = 28;
-const BULLET_RADIUS = 5;
 
 const runwayImpactY = GAME_HEIGHT - GROUND_HEIGHT - RUNWAY_HEIGHT / 2;
 
@@ -68,6 +55,7 @@ export function stepRoom(room: RoomRecord): boolean {
 
   for (const player of room.state.players) {
     const plane = player.plane;
+    const stats = room.planeStats[player.slot];
     plane.shotCooldownMs = Math.max(0, plane.shotCooldownMs - SIMULATION_TICK_MS);
 
     switch (plane.phase) {
@@ -75,10 +63,10 @@ export function stepRoom(room: RoomRecord): boolean {
         changed = updateParkedPlane(player.slot, plane, player.input) || changed;
         break;
       case 'runway':
-        changed = updateRunwayPlane(player.slot, plane, player.input) || changed;
+        changed = updateRunwayPlane(player.slot, plane, player.input, stats) || changed;
         break;
       case 'airborne':
-        changed = updateAirbornePlane(player.slot, plane, player.input) || changed;
+        changed = updateAirbornePlane(player.slot, plane, player.input, stats) || changed;
         if (plane.position.y >= runwayImpactY) {
           destroyedSlots.add(player.slot);
         }
@@ -89,7 +77,7 @@ export function stepRoom(room: RoomRecord): boolean {
         break;
     }
 
-    const bullet = maybeCreateBullet(player.slot, plane, player.input);
+    const bullet = maybeCreateBullet(player.slot, plane, player.input, stats);
     if (bullet) {
       spawnedBullets.push(bullet);
       changed = true;
@@ -112,7 +100,7 @@ export function stepRoom(room: RoomRecord): boolean {
     bullet.position.x += bullet.velocity.x * DT_SECONDS;
     bullet.position.y += bullet.velocity.y * DT_SECONDS;
     bullet.ttlMs -= SIMULATION_TICK_MS;
-    wrapBulletHorizontally(bullet);
+    bullet.position.x = wrapX(bullet.position.x, BULLET_WRAP_MARGIN);
     changed = true;
 
     if (isBulletExpired(bullet)) {
@@ -126,7 +114,7 @@ export function stepRoom(room: RoomRecord): boolean {
         continue;
       }
 
-      if (doesBulletHitPlane(bullet.position, player.plane)) {
+      if (doesBulletHitPlane(bullet, player.plane)) {
         destroyedSlots.add(player.slot);
         hit = true;
       }
@@ -171,7 +159,7 @@ export function stepRoom(room: RoomRecord): boolean {
 function updateParkedPlane(slot: PlayerSlot, plane: PlaneState, input: { launchPressed: boolean }): boolean {
   // Parked state is not simulated continuously. It is simply synchronized back
   // to the default spawn until the launch input starts the runway roll.
-  const defaultPlane = defaultFlightState(slot);
+  const defaultPlane = createDefaultPlaneState(slot);
   let changed = syncPlane(plane, defaultPlane);
 
   if (input.launchPressed) {
@@ -185,23 +173,27 @@ function updateParkedPlane(slot: PlayerSlot, plane: PlaneState, input: { launchP
 function updateRunwayPlane(
   slot: PlayerSlot,
   plane: PlaneState,
-  input: { pitchUpPressed: boolean }
+  input: { pitchUpPressed: boolean },
+  stats: PlaneStats
 ): boolean {
-  // Runway phase is intentionally simple: fixed speed, fixed heading, no lift
-  // until the minimum runway time has elapsed and the player pitches up.
   const direction = slotDirection(slot);
   plane.runwayTimeMs += SIMULATION_TICK_MS;
   plane.angle = baseAngle(slot);
-  plane.velocity.x = direction * RUNWAY_SPEED;
+
+  // Speed ramps smoothly from 0 to airSpeed at the configured acceleration.
+  const currentSpeed = Math.abs(plane.velocity.x);
+  const newSpeed = Math.min(currentSpeed + stats.acceleration * DT_SECONDS, stats.airSpeed);
+  plane.velocity.x = direction * newSpeed;
   plane.velocity.y = 0;
   plane.position.x += plane.velocity.x * DT_SECONDS;
   plane.position.y = RUNWAY_PLANE_Y;
-  wrapPlaneHorizontally(plane);
+  plane.position.x = wrapX(plane.position.x, PLANE_WRAP_MARGIN);
 
-  if (plane.runwayTimeMs >= MIN_RUNWAY_TIME_MS && input.pitchUpPressed) {
+  // Lift-off becomes available once the plane has reached at least half airSpeed,
+  // giving control surfaces enough authority to rotate the nose.
+  if (newSpeed >= stats.airSpeed / 2 && input.pitchUpPressed) {
     plane.phase = 'airborne';
-    plane.angle = baseAngle(slot) + noseUpAngleDirection(slot) * TAKEOFF_ANGLE;
-    applyVelocityFromAngle(plane, AIR_SPEED);
+    applyVelocityFromAngle(plane, newSpeed);
   }
 
   return true;
@@ -210,19 +202,28 @@ function updateRunwayPlane(
 function updateAirbornePlane(
   slot: PlayerSlot,
   plane: PlaneState,
-  input: { pitchUpPressed: boolean; pitchDownPressed: boolean }
+  input: { pitchUpPressed: boolean; pitchDownPressed: boolean },
+  stats: PlaneStats
 ): boolean {
-  // Airborne control is continuous pitch-only flight with fixed forward speed.
-  // The design stays intentionally simple and does not model thrust or drag.
-  const pitchIntent = (input.pitchUpPressed ? 1 : 0) - (input.pitchDownPressed ? 1 : 0);
+  // Continue accelerating until airSpeed is reached, carrying over whatever
+  // speed the plane had at the moment of lift-off.
+  const currentSpeed = Math.hypot(plane.velocity.x, plane.velocity.y);
+  const newSpeed = Math.min(currentSpeed + stats.acceleration * DT_SECONDS, stats.airSpeed);
 
+  // Turn authority scales from 0 (at airSpeed/2) to full turnRate (at airSpeed).
+  // The exact value is locked in once newSpeed clamps to airSpeed to avoid drift.
+  const effectiveTurnRate = newSpeed >= stats.airSpeed
+    ? stats.turnRate
+    : stats.turnRate * Math.max(0, (newSpeed - stats.airSpeed / 2) / (stats.airSpeed / 2));
+
+  const pitchIntent = (input.pitchUpPressed ? 1 : 0) - (input.pitchDownPressed ? 1 : 0);
   plane.angle = normalizeAngle(
-    plane.angle + pitchIntent * noseUpAngleDirection(slot) * TURN_RATE * DT_SECONDS
+    plane.angle + pitchIntent * noseUpAngleDirection(slot) * effectiveTurnRate * DT_SECONDS
   );
-  applyVelocityFromAngle(plane, AIR_SPEED);
+  applyVelocityFromAngle(plane, newSpeed);
   plane.position.x += plane.velocity.x * DT_SECONDS;
   plane.position.y += plane.velocity.y * DT_SECONDS;
-  wrapPlaneHorizontally(plane);
+  plane.position.x = wrapX(plane.position.x, PLANE_WRAP_MARGIN);
 
   if (plane.position.y < SKY_MARGIN) {
     plane.position.y = SKY_MARGIN;
@@ -234,7 +235,8 @@ function updateAirbornePlane(
 function maybeCreateBullet(
   slot: PlayerSlot,
   plane: PlaneState,
-  input: { firePressed: boolean }
+  input: { firePressed: boolean },
+  stats: PlaneStats
 ): BulletState | null {
   // Runway and airborne phases are both allowed to fire. Parked planes and
   // destroyed planes never spawn bullets.
@@ -246,7 +248,7 @@ function maybeCreateBullet(
     return null;
   }
 
-  plane.shotCooldownMs = FIRE_COOLDOWN_MS;
+  plane.shotCooldownMs = stats.fireCooldownMs;
   const planeOrigin = getPlaneShapeOrigin(plane.position);
   const muzzlePosition = transformPlanePoint(PLANE_GEOMETRY.muzzlePoint, planeOrigin, plane.angle);
 
@@ -255,10 +257,11 @@ function maybeCreateBullet(
     ownerSlot: slot,
     position: muzzlePosition,
     velocity: {
-      x: Math.cos(plane.angle) * BULLET_SPEED,
-      y: Math.sin(plane.angle) * BULLET_SPEED
+      x: Math.cos(plane.angle) * stats.bulletSpeed,
+      y: Math.sin(plane.angle) * stats.bulletSpeed
     },
-    ttlMs: BULLET_TTL_MS
+    ttlMs: (stats.bulletRange / stats.bulletSpeed) * 1000,
+    radius: stats.bulletRadius
   };
 }
 
@@ -294,21 +297,6 @@ function awardRoundWin(room: RoomRecord, outcome: RoundOutcome): void {
   }
 }
 
-// These helpers keep per-slot default flight state in one place so rematches,
-// reconnect resets, and parked updates all produce the same spawn data.
-function defaultFlightState(slot: PlayerSlot): PlaneState {
-  return {
-    ...{
-      position: { ...createPosition(slot) },
-      velocity: { x: 0, y: 0 },
-      angle: baseAngle(slot),
-      phase: 'parked',
-      runwayTimeMs: 0,
-      shotCooldownMs: 0
-    }
-  };
-}
-
 function syncPlane(target: PlaneState, source: PlaneState): boolean {
   const changed =
     target.position.x !== source.position.x ||
@@ -339,13 +327,6 @@ function applyVelocityFromAngle(plane: PlaneState, speed: number): void {
   plane.velocity.y = Math.sin(plane.angle) * speed;
 }
 
-function createPosition(slot: PlayerSlot): { x: number; y: number } {
-  return {
-    x: slot === 'left' ? 96 : GAME_WIDTH - 96,
-    y: RUNWAY_PLANE_Y
-  };
-}
-
 function baseAngle(slot: PlayerSlot): number {
   return slot === 'left' ? 0 : Math.PI;
 }
@@ -360,20 +341,10 @@ function noseUpAngleDirection(slot: PlayerSlot): number {
 
 // Planes and bullets wrap horizontally so combat can continue seamlessly across
 // the screen edge. Vertical escape still counts as leaving the combat area.
-function wrapPlaneHorizontally(plane: PlaneState): void {
-  if (plane.position.x < -PLANE_WRAP_MARGIN) {
-    plane.position.x = GAME_WIDTH + PLANE_WRAP_MARGIN;
-  } else if (plane.position.x > GAME_WIDTH + PLANE_WRAP_MARGIN) {
-    plane.position.x = -PLANE_WRAP_MARGIN;
-  }
-}
-
-function wrapBulletHorizontally(bullet: BulletState): void {
-  if (bullet.position.x < -BULLET_WRAP_MARGIN) {
-    bullet.position.x = GAME_WIDTH + BULLET_WRAP_MARGIN;
-  } else if (bullet.position.x > GAME_WIDTH + BULLET_WRAP_MARGIN) {
-    bullet.position.x = -BULLET_WRAP_MARGIN;
-  }
+function wrapX(x: number, margin: number): number {
+  if (x < -margin) return GAME_WIDTH + margin;
+  if (x > GAME_WIDTH + margin) return -margin;
+  return x;
 }
 
 function didPlanesCollide(players: RoomRecord['state']['players']): boolean {
@@ -433,10 +404,10 @@ function doCollisionPolygonSetsIntersect(
   return false;
 }
 
-function doesBulletHitPlane(bulletCenter: PlanePoint, plane: PlaneState): boolean {
+function doesBulletHitPlane(bullet: BulletState, plane: PlaneState): boolean {
   const collisionPolygons = getPlaneCollisionPolygons(plane);
   return collisionPolygons.some((polygon) =>
-    doesCircleIntersectPolygon(bulletCenter, BULLET_RADIUS, polygon)
+    doesCircleIntersectPolygon(bullet.position, bullet.radius, polygon)
   );
 }
 
@@ -583,13 +554,6 @@ function distancePointToSegmentSquared(
 
 function normalizeAngle(angle: number): number {
   return Math.atan2(Math.sin(angle), Math.cos(angle));
-}
-
-// Environment-configurable tuning values deliberately fall back to safe defaults
-// so invalid env input does not crash the game server.
-function readPositiveNumber(rawValue: string | undefined, fallback: number): number {
-  const parsedValue = Number(rawValue);
-  return Number.isFinite(parsedValue) && parsedValue > 0 ? parsedValue : fallback;
 }
 
 function distanceSquaredPoints(first: PlanePoint, second: PlanePoint): number {

@@ -7,10 +7,12 @@ import WebSocket, { WebSocketServer, type RawData } from 'ws';
 
 import {
   isInputState,
+  PLAYER_SLOTS,
   type ClientMessage,
   type ServerErrorCode,
   type ServerMessage
 } from '../shared/game.js';
+import { isPlaneStats } from '../shared/plane-stats.js';
 import { normalizeRoomId, RoomRegistry } from './room-registry.js';
 import { SIMULATION_TICK_MS, stepRoom } from './simulation.js';
 
@@ -147,6 +149,15 @@ function handleClientMessage(socket: WebSocket, rawMessage: RawData): void {
     if (parsedMessage.type === 'rematch_requested') {
       roomRegistry.requestRematch(metadata.roomId, metadata.slot);
       broadcastRoomState(metadata.roomId);
+      return;
+    }
+
+    if (parsedMessage.type === 'plane_stats_update') {
+      const { payload } = parsedMessage;
+      if (!PLAYER_SLOTS.includes(payload.slot) || !isPlaneStats(payload.stats)) {
+        throw new Error('Invalid plane stats payload.');
+      }
+      roomRegistry.updatePlaneStats(metadata.roomId, payload.slot, payload.stats);
       return;
     }
 
