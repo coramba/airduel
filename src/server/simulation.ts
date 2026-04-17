@@ -21,7 +21,7 @@ import {
   transformPlanePolygon,
   type PlanePoint
 } from '../shared/plane-shape.js';
-import type { PlaneStats } from '../shared/plane-stats.js';
+import type { PlaneStats } from '../shared/game-config.js';
 import type { RoomRecord } from './room-registry.js';
 
 // Authoritative round simulation.
@@ -60,7 +60,7 @@ export function stepRoom(room: RoomRecord): boolean {
 
     switch (plane.phase) {
       case 'parked':
-        changed = updateParkedPlane(player.slot, plane, player.input) || changed;
+        changed = updateParkedPlane(player.slot, plane, player.input, stats) || changed;
         break;
       case 'runway':
         changed = updateRunwayPlane(player.slot, plane, player.input, stats) || changed;
@@ -68,14 +68,17 @@ export function stepRoom(room: RoomRecord): boolean {
       case 'airborne':
         changed = updateAirbornePlane(player.slot, plane, player.input, stats) || changed;
         if (plane.position.y >= runwayImpactY) {
-          destroyedSlots.add(player.slot);
+          resolveGroundContact(player.slot, plane, stats, destroyedSlots);
         }
         break;
       case 'stall':
         changed = updateStalledPlane(player.slot, plane, stats) || changed;
         if (plane.position.y >= runwayImpactY) {
-          destroyedSlots.add(player.slot);
+          resolveGroundContact(player.slot, plane, stats, destroyedSlots);
         }
+        break;
+      case 'landing':
+        changed = updateLandingPlane(player.slot, plane, stats, player.input) || changed;
         break;
       case 'destroyed':
         plane.velocity.x = 0;
@@ -162,10 +165,8 @@ export function stepRoom(room: RoomRecord): boolean {
   return changed;
 }
 
-function updateParkedPlane(slot: PlayerSlot, plane: PlaneState, input: { launchPressed: boolean }): boolean {
-  // Parked state is not simulated continuously. It is simply synchronized back
-  // to the default spawn until the launch input starts the runway roll.
-  const defaultPlane = createDefaultPlaneState(slot);
+function updateParkedPlane(slot: PlayerSlot, plane: PlaneState, input: { launchPressed: boolean }, stats: PlaneStats): boolean {
+  const defaultPlane = createDefaultPlaneState(slot, stats.runwayStartX);
   let changed = syncPlane(plane, defaultPlane);
 
   if (input.launchPressed) {
@@ -220,6 +221,46 @@ function updateStalledPlane(
   plane.stallRemainingPx = Math.max(0, plane.stallRemainingPx - Math.abs(plane.velocity.y) * DT_SECONDS);
   if (plane.stallRemainingPx === 0) {
     plane.phase = 'airborne';
+  }
+
+  return true;
+}
+
+function resolveGroundContact(
+  slot: PlayerSlot,
+  plane: PlaneState,
+  stats: PlaneStats,
+  destroyedSlots: Set<PlayerSlot>
+): void {
+  if (plane.velocity.y < stats.allowedLandingSpeed) {
+    plane.phase = 'landing';
+    plane.position.y = RUNWAY_PLANE_Y;
+    plane.velocity.y = 0;
+    plane.angle = baseAngle(slot);
+    plane.stallRemainingPx = 0;
+  } else {
+    destroyedSlots.add(slot);
+  }
+}
+
+function updateLandingPlane(
+  slot: PlayerSlot,
+  plane: PlaneState,
+  stats: PlaneStats,
+  input: { launchPressed: boolean }
+): boolean {
+  plane.position.y = RUNWAY_PLANE_Y;
+  plane.velocity.y = 0;
+  plane.angle = baseAngle(slot);
+
+  const currentSpeed = Math.abs(plane.velocity.x);
+  if (currentSpeed > 0) {
+    const newSpeed = Math.max(0, currentSpeed - stats.brakingDeceleration * DT_SECONDS);
+    plane.velocity.x = Math.sign(plane.velocity.x) * newSpeed;
+    plane.position.x += plane.velocity.x * DT_SECONDS;
+    plane.position.x = wrapX(plane.position.x, PLANE_WRAP_MARGIN);
+  } else if (input.launchPressed) {
+    plane.phase = 'runway';
   }
 
   return true;

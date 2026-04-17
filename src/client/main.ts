@@ -28,7 +28,7 @@ import {
   DEFAULT_PLANE_STATS,
   PLANE_STATS_FIELDS,
   type PlaneStats
-} from '../shared/plane-stats.js';
+} from '../shared/game-config.js';
 
 // Browser runtime for the game client.
 // This file owns:
@@ -197,17 +197,18 @@ function drawBackground(context: CanvasRenderingContext2D): void {
 // visually obvious during waiting and active phases.
 function drawRunways(context: CanvasRenderingContext2D): void {
   const runwayY = GAME_HEIGHT - GROUND_HEIGHT - RUNWAY_HEIGHT;
-  const runwayWidth = 94;
-  const leftX = 50;
-  const rightX = GAME_WIDTH - leftX - runwayWidth;
 
-  context.fillStyle = '#6d5a4d';
-  context.fillRect(leftX, runwayY, runwayWidth, 14);
-  context.fillRect(rightX, runwayY, runwayWidth, 14);
+  for (const slot of PLAYER_SLOTS) {
+    const { runwayStartX, runwayLength } = editablePlaneStats[slot];
+    const x = slot === 'left' ? runwayStartX : runwayStartX - runwayLength;
 
-  context.fillStyle = 'rgba(255, 255, 255, 0.6)';
-  for (const x of [leftX + 12, leftX + 34, leftX + 56, rightX + 12, rightX + 34, rightX + 56]) {
-    context.fillRect(x, runwayY + 5, 10, 4);
+    context.fillStyle = '#6d5a4d';
+    context.fillRect(x, runwayY, runwayLength, 14);
+
+    context.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    for (let mark = x + 12; mark + 10 <= x + runwayLength; mark += 22) {
+      context.fillRect(mark, runwayY + 5, 10, 4);
+    }
   }
 }
 
@@ -962,12 +963,8 @@ function isMatchStarted(): boolean {
 }
 
 function shouldShowSetupPanel(): boolean {
-  if (isMatchStarted()) {
-    return false;
-  }
-
   if (state.setupPanelMode === 'share') {
-    return Boolean(state.roomLink);
+    return Boolean(state.roomLink) && !isMatchStarted();
   }
 
   return state.setupPanelMode === 'join';
@@ -1099,6 +1096,7 @@ function resetRoomView(feedback: string): void {
   state.roomState = null;
   state.phase = 'error';
   state.feedback = feedback;
+  state.setupPanelMode = 'join';
   setRoom(null);
   clearRoomSnapshots();
 }
@@ -1278,6 +1276,8 @@ function formatPhase(phase: PlanePhase): string {
       return 'Airborne';
     case 'stall':
       return 'Stall';
+    case 'landing':
+      return 'Landing';
     case 'destroyed':
       return 'Destroyed';
   }

@@ -1,4 +1,4 @@
-import type { PlaneStats } from './plane-stats.js';
+import type { PlaneStats } from './game-config.js';
 
 // Shared constants, state shapes, and message contracts.
 // Both the browser client and the Node server import this file so that
@@ -15,7 +15,7 @@ export const PLAYER_SLOTS = ['left', 'right'] as const;
 
 export type PlayerSlot = (typeof PLAYER_SLOTS)[number];
 export type RoomStatus = 'waiting' | 'active' | 'round_over';
-export type PlanePhase = 'parked' | 'runway' | 'airborne' | 'stall' | 'destroyed';
+export type PlanePhase = 'parked' | 'runway' | 'airborne' | 'stall' | 'landing' | 'destroyed';
 export type RoundOutcome = 'left_win' | 'right_win' | 'draw';
 export type ServerErrorCode =
   | 'room_not_found'
@@ -129,9 +129,9 @@ export function createDefaultInputState(): InputState {
 
 // Planes always reset to a known runway spawn position.
 // The server reuses this for new rooms, rematches, and disconnect resets.
-export function createDefaultPlaneState(slot: PlayerSlot): PlaneState {
-  const START_MARGIN = 48;
-  const x = slot === 'left' ? START_MARGIN : GAME_WIDTH - START_MARGIN;
+export function createDefaultPlaneState(slot: PlayerSlot, runwayStartX?: number): PlaneState {
+  const defaultX = slot === 'left' ? 48 : GAME_WIDTH - 48;
+  const x = runwayStartX ?? defaultX;
 
   return {
     position: { x, y: RUNWAY_PLANE_Y },

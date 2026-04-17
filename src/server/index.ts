@@ -12,7 +12,7 @@ import {
   type ServerErrorCode,
   type ServerMessage
 } from '../shared/game.js';
-import { isPlaneStats } from '../shared/plane-stats.js';
+import { isPlaneStats } from '../shared/game-config.js';
 import { normalizeRoomId, RoomRegistry } from './room-registry.js';
 import { SIMULATION_TICK_MS, stepRoom } from './simulation.js';
 

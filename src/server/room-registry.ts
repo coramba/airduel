@@ -12,7 +12,7 @@ import {
   type RoomState,
   type ServerErrorCode
 } from '../shared/game.js';
-import { DEFAULT_PLANE_STATS, type PlaneStats } from '../shared/plane-stats.js';
+import { DEFAULT_PLANE_STATS, type PlaneStats } from '../shared/game-config.js';
 
 // RoomRegistry owns all long-lived multiplayer state that is not part of the
 // frame-by-frame flight simulation:
