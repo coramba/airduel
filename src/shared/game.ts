@@ -15,7 +15,7 @@ export const PLAYER_SLOTS = ['left', 'right'] as const;
 
 export type PlayerSlot = (typeof PLAYER_SLOTS)[number];
 export type RoomStatus = 'waiting' | 'active' | 'round_over';
-export type PlanePhase = 'parked' | 'runway' | 'airborne' | 'destroyed';
+export type PlanePhase = 'parked' | 'runway' | 'airborne' | 'stall' | 'destroyed';
 export type RoundOutcome = 'left_win' | 'right_win' | 'draw';
 export type ServerErrorCode =
   | 'room_not_found'
@@ -46,6 +46,7 @@ export interface PlaneState {
   phase: PlanePhase;
   runwayTimeMs: number;
   shotCooldownMs: number;
+  stallRemainingPx: number;
 }
 
 export interface BulletState {
@@ -138,7 +139,8 @@ export function createDefaultPlaneState(slot: PlayerSlot): PlaneState {
     angle: slot === 'left' ? 0 : Math.PI,
     phase: 'parked',
     runwayTimeMs: 0,
-    shotCooldownMs: 0
+    shotCooldownMs: 0,
+    stallRemainingPx: 0
   };
 }
 

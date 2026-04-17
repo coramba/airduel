@@ -81,6 +81,8 @@ const PLANE_IMAGES: Record<PlayerSlot, HTMLImageElement> = {
   right: loadImage('/images/plane1.png')
 };
 
+const horizonImage = loadImage('/images/horizon2.png');
+
 const PLANE_GRID_EXTENT = 100;
 const PLANE_GRID_STEP = 10;
 const GRID_TOGGLE_DOUBLE_PRESS_MS = 360;
@@ -163,6 +165,16 @@ function drawBackground(context: CanvasRenderingContext2D): void {
   groundGradient.addColorStop(1, '#d9bf79');
   context.fillStyle = groundGradient;
   context.fillRect(0, GAME_HEIGHT - GROUND_HEIGHT, GAME_WIDTH, GROUND_HEIGHT);
+
+  if (horizonImage.complete && horizonImage.naturalWidth > 0) {
+    const imgH = horizonImage.naturalHeight;
+    const y = GAME_HEIGHT - GROUND_HEIGHT - imgH + 7;
+    context.globalAlpha = 0.6;
+    for (let x = 0; x < GAME_WIDTH; x += horizonImage.naturalWidth) {
+      context.drawImage(horizonImage, x, y);
+    }
+    context.globalAlpha = 1;
+  }
 
   context.fillStyle = '#477f34';
   context.fillRect(0, GAME_HEIGHT - GROUND_HEIGHT, GAME_WIDTH, 10);
@@ -1264,6 +1276,8 @@ function formatPhase(phase: PlanePhase): string {
       return 'Rolling';
     case 'airborne':
       return 'Airborne';
+    case 'stall':
+      return 'Stall';
     case 'destroyed':
       return 'Destroyed';
   }

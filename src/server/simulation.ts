@@ -71,6 +71,12 @@ export function stepRoom(room: RoomRecord): boolean {
           destroyedSlots.add(player.slot);
         }
         break;
+      case 'stall':
+        changed = updateStalledPlane(player.slot, plane, stats) || changed;
+        if (plane.position.y >= runwayImpactY) {
+          destroyedSlots.add(player.slot);
+        }
+        break;
       case 'destroyed':
         plane.velocity.x = 0;
         plane.velocity.y = 0;
@@ -199,6 +205,26 @@ function updateRunwayPlane(
   return true;
 }
 
+function updateStalledPlane(
+  slot: PlayerSlot,
+  plane: PlaneState,
+  stats: PlaneStats
+): boolean {
+  const targetAngle = Math.PI / 2;
+  plane.angle = normalizeAngle(plane.angle + Math.sign(normalizeAngle(targetAngle - plane.angle)) * stats.turnRate * 2 * DT_SECONDS);
+  applyVelocityFromAngle(plane, stats.airSpeed);
+  plane.position.x += plane.velocity.x * DT_SECONDS;
+  plane.position.y += plane.velocity.y * DT_SECONDS;
+  plane.position.x = wrapX(plane.position.x, PLANE_WRAP_MARGIN);
+
+  plane.stallRemainingPx = Math.max(0, plane.stallRemainingPx - Math.abs(plane.velocity.y) * DT_SECONDS);
+  if (plane.stallRemainingPx === 0) {
+    plane.phase = 'airborne';
+  }
+
+  return true;
+}
+
 function updateAirbornePlane(
   slot: PlayerSlot,
   plane: PlaneState,
@@ -209,6 +235,14 @@ function updateAirbornePlane(
   // speed the plane had at the moment of lift-off.
   const currentSpeed = Math.hypot(plane.velocity.x, plane.velocity.y);
   const newSpeed = Math.min(currentSpeed + stats.acceleration * DT_SECONDS, stats.airSpeed);
+
+  // Stall triggers only at the sky ceiling: the plane is pinned upward and
+  // horizontal speed has bled off to near zero (the "candle" scenario).
+  if (plane.position.y <= SKY_MARGIN && Math.abs(plane.velocity.x) < stats.airSpeed * (stats.stallThreshold / 100)) {
+    plane.phase = 'stall';
+    plane.stallRemainingPx = stats.diveExitDistance;
+    return true;
+  }
 
   // Turn authority scales from 0 (at airSpeed/2) to full turnRate (at airSpeed).
   // The exact value is locked in once newSpeed clamps to airSpeed to avoid drift.
