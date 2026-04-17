@@ -77,9 +77,17 @@ h1 {
 }
 
 .canvas-root {
+  position: relative;
   overflow: hidden;
   border-radius: 14px;
   box-shadow: inset 0 0 0 1px rgba(21, 49, 75, 0.14);
+}
+
+.explosion-sprite {
+  position: absolute;
+  transform: translate(-50%, -50%) scale(0.25);
+  pointer-events: none;
+  display: none;
 }
 
 .game-canvas {

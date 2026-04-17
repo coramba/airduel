@@ -1,5 +1,7 @@
 import type { PlayerSlot } from './game.js';
 
+export const EXPLOSION_DURATION_MS = 1500;
+
 export interface PlaneStats {
   airSpeed: number;
   acceleration: number;

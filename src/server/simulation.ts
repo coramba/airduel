@@ -21,7 +21,7 @@ import {
   transformPlanePolygon,
   type PlanePoint
 } from '../shared/plane-shape.js';
-import type { PlaneStats } from '../shared/game-config.js';
+import { EXPLOSION_DURATION_MS, type PlaneStats } from '../shared/game-config.js';
 import type { RoomRecord } from './room-registry.js';
 
 // Authoritative round simulation.
@@ -47,6 +47,15 @@ export function stepRoom(room: RoomRecord): boolean {
   const allPlayersConnected = room.state.players.every((player) => player.connected);
   if (!allPlayersConnected) {
     return false;
+  }
+
+  if (room.state.explosionRemainingMs > 0) {
+    room.state.explosionRemainingMs = Math.max(0, room.state.explosionRemainingMs - SIMULATION_TICK_MS);
+    if (room.state.explosionRemainingMs === 0) {
+      finalizeRound(room);
+    }
+    room.state.lastActivityAt = Date.now();
+    return true;
   }
 
   let changed = false;
@@ -137,23 +146,16 @@ export function stepRoom(room: RoomRecord): boolean {
   room.state.bullets = nextBullets;
 
   if (destroyedSlots.size > 0) {
-    const outcome = resolveOutcome(destroyedSlots);
-
     for (const player of room.state.players) {
       if (destroyedSlots.has(player.slot)) {
         player.plane.phase = 'destroyed';
         player.plane.velocity.x = 0;
         player.plane.velocity.y = 0;
       }
-
       player.input = createDefaultInputState();
     }
-
     room.state.bullets = [];
-    room.state.status = 'round_over';
-    room.state.message = 'Round complete. Both pilots must request rematch.';
-    room.state.winner = outcome;
-    awardRoundWin(room, outcome);
+    room.state.explosionRemainingMs = EXPLOSION_DURATION_MS;
     room.state.lastActivityAt = Date.now();
     return true;
   }
@@ -346,6 +348,20 @@ function isBulletExpired(bullet: BulletState): boolean {
     bullet.position.y < -BULLET_WRAP_MARGIN ||
     bullet.position.y > GAME_HEIGHT + BULLET_WRAP_MARGIN
   );
+}
+
+function finalizeRound(room: RoomRecord): void {
+  const destroyedSlots = new Set(
+    room.state.players.filter((p) => p.plane.phase === 'destroyed').map((p) => p.slot)
+  );
+  const outcome = resolveOutcome(destroyedSlots);
+  room.state.status = 'round_over';
+  room.state.winner = outcome;
+  room.state.message =
+    outcome === 'draw'
+      ? 'Draw! Both pilots destroyed.'
+      : `${outcome === 'left_win' ? 'Left' : 'Right'} pilot wins the round!`;
+  awardRoundWin(room, outcome);
 }
 
 // Round outcome is derived only from which slots were destroyed this tick.

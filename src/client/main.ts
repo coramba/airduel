@@ -26,6 +26,7 @@ import {
 } from '../shared/plane-shape.js';
 import {
   DEFAULT_PLANE_STATS,
+  EXPLOSION_DURATION_MS,
   PLANE_STATS_FIELDS,
   type PlaneStats
 } from '../shared/game-config.js';
@@ -82,6 +83,8 @@ const PLANE_IMAGES: Record<PlayerSlot, HTMLImageElement> = {
 };
 
 const horizonImage = loadImage('/images/horizon2.png');
+const EXPLOSION_GROW_MS = 300;
+const EXPLOSION_SHRINK_MS = 400;
 
 const PLANE_GRID_EXTENT = 100;
 const PLANE_GRID_STEP = 10;
@@ -266,14 +269,6 @@ function drawPlane(
   const horizontalExtent = getPlaneHorizontalRenderExtent(geometry, img);
 
   if (plane.phase === 'destroyed') {
-    drawWrappedHorizontally(
-      plane.position.x,
-      horizontalExtent,
-      GAME_WIDTH + PLANE_WRAP_MARGIN * 2,
-      (xOffset) => {
-        drawExplosion(context, plane.position.x + xOffset, plane.position.y, glow);
-      }
-    );
     return;
   }
 
@@ -410,21 +405,45 @@ function drawCollisionOverlay(context: CanvasRenderingContext2D): void {
   context.restore();
 }
 
-function drawExplosion(context: CanvasRenderingContext2D, x: number, y: number, glow: string): void {
-  context.save();
-  context.fillStyle = glow;
-  context.beginPath();
-  context.arc(x, y, 24, 0, Math.PI * 2);
-  context.fill();
-  context.fillStyle = '#f7c15d';
-  context.beginPath();
-  context.arc(x, y, 14, 0, Math.PI * 2);
-  context.fill();
-  context.fillStyle = '#f86b3a';
-  context.beginPath();
-  context.arc(x, y, 7, 0, Math.PI * 2);
-  context.fill();
-  context.restore();
+function getExplosionScale(elapsedMs: number): number {
+  const GROW_MS = 300;
+  const SHRINK_MS = 400;
+  if (elapsedMs < GROW_MS) {
+    return 0.25 + 0.75 * (elapsedMs / GROW_MS);
+  }
+  const shrinkStart = EXPLOSION_DURATION_MS - SHRINK_MS;
+  if (elapsedMs < shrinkStart) {
+    return 1.0;
+  }
+  if (elapsedMs < EXPLOSION_DURATION_MS) {
+    return 1.0 - 0.75 * ((elapsedMs - shrinkStart) / SHRINK_MS);
+  }
+  return 0;
+}
+
+function showExplosionSprite(slot: PlayerSlot, gameX: number, gameY: number): void {
+  const sprite = explosionSprites[slot];
+  sprite.style.left = `${(gameX / GAME_WIDTH) * 100}%`;
+  sprite.style.top = `${(gameY / GAME_HEIGHT) * 100}%`;
+  sprite.style.display = 'block';
+  // Force the GIF to restart from frame 0 by re-assigning src.
+  sprite.src = '/images/airexplosion1.gif';
+}
+
+function hideExplosionSprite(slot: PlayerSlot): void {
+  explosionSprites[slot].style.display = 'none';
+}
+
+function updateExplosionSprites(): void {
+  for (const slot of PLAYER_SLOTS) {
+    const startMs = explosionStartTimes.get(slot);
+    if (startMs === undefined) {
+      continue;
+    }
+    const elapsed = performance.now() - startMs;
+    const scale = getExplosionScale(elapsed);
+    explosionSprites[slot].style.transform = `translate(-50%, -50%) scale(${scale})`;
+  }
 }
 
 function drawBullet(context: CanvasRenderingContext2D, bullet: BulletState): void {
@@ -522,6 +541,19 @@ if (!canvasContext) {
 const context = canvasContext;
 canvasRoot.replaceChildren(canvas);
 
+function createExplosionSprite(): HTMLImageElement {
+  const img = new Image();
+  img.src = '/images/airexplosion1.gif';
+  img.className = 'explosion-sprite';
+  canvasRoot.appendChild(img);
+  return img;
+}
+
+const explosionSprites: Record<PlayerSlot, HTMLImageElement> = {
+  left: createExplosionSprite(),
+  right: createExplosionSprite()
+};
+
 const playerCardRefs = new Map<PlayerSlot, PlayerCardRefs>(
   PLAYER_SLOTS.map((slot) => [slot, createPlayerCard(slot)])
 );
@@ -550,6 +582,7 @@ let planeGeometryFeedback = '';
 let editablePlaneGeometry: PlaneGeometry | null = null;
 let previousRoomSnapshot: RoomSnapshot | null = null;
 let currentRoomSnapshot: RoomSnapshot | null = null;
+const explosionStartTimes = new Map<PlayerSlot, number>();
 
 const editablePlaneStats: Record<PlayerSlot, PlaneStats> = {
   left:  { ...DEFAULT_PLANE_STATS.left  },
@@ -737,9 +770,30 @@ function render(): void {
 function clearRoomSnapshots(): void {
   previousRoomSnapshot = null;
   currentRoomSnapshot = null;
+  explosionStartTimes.clear();
+  for (const slot of PLAYER_SLOTS) {
+    hideExplosionSprite(slot);
+  }
 }
 
 function setCurrentRoomState(nextRoomState: RoomState): void {
+  const prevState = currentRoomSnapshot?.state;
+
+  if (prevState) {
+    for (const player of nextRoomState.players) {
+      if (player.plane.phase === 'destroyed') {
+        const prevPlayer = prevState.players.find((p) => p.slot === player.slot);
+        if (prevPlayer?.plane.phase !== 'destroyed' && !explosionStartTimes.has(player.slot)) {
+          explosionStartTimes.set(player.slot, performance.now());
+          showExplosionSprite(player.slot, player.plane.position.x, player.plane.position.y);
+        }
+      } else {
+        explosionStartTimes.delete(player.slot);
+        hideExplosionSprite(player.slot);
+      }
+    }
+  }
+
   state.roomState = nextRoomState;
   previousRoomSnapshot = currentRoomSnapshot;
   currentRoomSnapshot = {
@@ -751,6 +805,7 @@ function setCurrentRoomState(nextRoomState: RoomState): void {
 function drawFrame(frameTimeMs: number): void {
   const displayedRoomState = getDisplayedRoomState(frameTimeMs);
   drawScene(context, state, displayedRoomState);
+  updateExplosionSprites();
   updateTelemetry();
   window.requestAnimationFrame(drawFrame);
 }

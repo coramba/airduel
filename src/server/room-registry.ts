@@ -85,6 +85,7 @@ export class RoomRegistry {
         bullets: [],
         rematchVotes: [],
         winner: null,
+        explosionRemainingMs: 0,
         createdAt: now,
         lastActivityAt: now
       },
@@ -315,6 +316,7 @@ export class RoomRegistry {
     room.state.bullets = [];
     room.state.rematchVotes = [];
     room.state.winner = null;
+    room.state.explosionRemainingMs = 0;
     room.state.lastActivityAt = Date.now();
 
     for (const player of room.state.players) {

@@ -75,6 +75,7 @@ export interface RoomState {
   bullets: BulletState[];
   rematchVotes: PlayerSlot[];
   winner: RoundOutcome | null;
+  explosionRemainingMs: number;
   createdAt: number;
   lastActivityAt: number;
 }
