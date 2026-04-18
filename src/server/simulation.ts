@@ -9,25 +9,23 @@ import {
   RUNWAY_PLANE_Y,
   createDefaultInputState,
   createDefaultPlaneState,
-  type BulletState,
-  type InputState,
-  type PlaneState,
-  type PlayerSlot,
-  type RoundOutcome
 } from '../shared/game.js';
 import {
   PLANE_GEOMETRY,
   getPlaneShapeOrigin,
   transformPlanePoint,
   transformPlanePolygon,
-  type PlanePoint
 } from '../shared/plane-shape.js';
-import { EXPLOSION_CONFIG, type PlaneStats, type RunwayConfig } from '../shared/game-config.js';
-import type { RoomRecord } from './room-registry.js';
+import { EXPLOSION_CONFIG } from '../shared/game-config.js';
+import type { BulletState, InputState, PlaneState, PlayerSlot, RoundOutcome } from '../types/game.js';
+import type { PlaneStats, RunwayConfig } from '../types/config.js';
+import type { PlanePoint } from '../types/geometry.js';
+import type { RoomRecord } from '../types/server.js';
 
 // Authoritative round simulation.
 // The server advances every active room at a fixed tick rate and is the only
 // place where movement, firing, collisions, and score-awarding decisions happen.
+// Types used here are imported from src/types/.
 export const SIMULATION_TICK_MS = 1000 / 30;
 
 // Fixed simulation constants that are not exposed for per-plane tuning.

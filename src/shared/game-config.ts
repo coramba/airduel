@@ -1,4 +1,7 @@
-import type { PlayerSlot } from './game.js';
+// Shared gameplay configuration: asset names, defaults, field descriptors, and validators.
+// Type definitions (PlaneStats, RunwayConfig, …) live in src/types/config.ts.
+import type { PlayerSlot } from '../types/game.js';
+import type { PlaneStats, PlaneStatsField, RunwayConfig, RunwayConfigField } from '../types/config.js';
 
 export const EXPLOSION_CONFIG = {
   image: 'airexplosion1.gif',
@@ -6,31 +9,17 @@ export const EXPLOSION_CONFIG = {
   growMs: 300,
   shrinkMs: 400,
 };
+
 export const HORIZON_CONFIG = {
-  image: 'horizon2.png',
-  offsetY: 7,
-  alpha: 0.6,
+  image: 'horizon3.png',
+  offsetY: 4,
+  alpha: 0.75,
 };
 
-export interface RunwayConfig {
-  startX: number;
-  length: number;
-  spawnX: number;
-  buildingImage: string;
-  buildingOffsetX: number;
-  buildingOffsetY: number;
-}
-
-export interface RunwayConfigField {
-  key: keyof RunwayConfig;
-  label: string;
-  step: number;
-}
-
 export const RUNWAY_CONFIG_FIELDS: readonly RunwayConfigField[] = [
-  { key: 'startX',          label: 'Runway start X (px)',   step: 5 },
-  { key: 'length',          label: 'Runway length (px)',    step: 5 },
-  { key: 'spawnX',          label: 'Spawn X (px)',          step: 5 },
+  { key: 'startX',          label: 'Runway start X (px)',    step: 5 },
+  { key: 'length',          label: 'Runway length (px)',     step: 5 },
+  { key: 'spawnX',          label: 'Spawn X (px)',           step: 5 },
   { key: 'buildingOffsetX', label: 'Building offset X (px)', step: 1 },
   { key: 'buildingOffsetY', label: 'Building offset Y (px)', step: 1 },
 ];
@@ -63,27 +52,6 @@ export function isRunwayConfig(value: unknown): value is RunwayConfig {
     typeof c.buildingOffsetX === 'number' &&
     typeof c.buildingOffsetY === 'number'
   );
-}
-
-export interface PlaneStats {
-  planeImage: string;
-  airSpeed: number;
-  acceleration: number;
-  turnRate: number;
-  stallThreshold: number;
-  diveExitDistance: number;
-  allowedLandingSpeed: number;
-  brakingDeceleration: number;
-  bulletSpeed: number;
-  bulletRange: number;
-  bulletRadius: number;
-  fireCooldownMs: number;
-}
-
-export interface PlaneStatsField {
-  key: keyof PlaneStats;
-  label: string;
-  step: number;
 }
 
 export const PLANE_STATS_FIELDS: readonly PlaneStatsField[] = [

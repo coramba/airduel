@@ -7,22 +7,10 @@ import {
   PLANE_WRAP_MARGIN,
   RUNWAY_HEIGHT,
   createDefaultInputState,
-  type BulletState,
-  type CreateRoomResponse,
-  type InputState,
-  type PlanePhase,
-  type PlaneState,
-  type PlayerSlot,
-  type PlayerState,
-  type RoomState,
-  type ServerErrorCode,
-  type ServerMessage
 } from '../shared/game.js';
 import {
   PLANE_GEOMETRY,
   getPlaneShapeOrigin,
-  type PlaneGeometry,
-  type PlanePoint
 } from '../shared/plane-shape.js';
 import {
   DEFAULT_PLANE_CONFIG,
@@ -31,9 +19,11 @@ import {
   HORIZON_CONFIG,
   PLANE_STATS_FIELDS,
   RUNWAY_CONFIG_FIELDS,
-  type PlaneStats,
-  type RunwayConfig
 } from '../shared/game-config.js';
+import type { BulletState, CreateRoomResponse, InputState, PlanePhase, PlaneState, PlayerSlot, PlayerState, RoomState, ServerErrorCode, ServerMessage } from '../types/game.js';
+import type { PlaneStats, RunwayConfig } from '../types/config.js';
+import type { PlaneGeometry, PlanePoint } from '../types/geometry.js';
+import type { AppState, Cloud, CloudPuff, ConnectionPhase, PlayerCardRefs, RoomSnapshot, RunwayInputMap, SetupPanelMode, StatsInputMap } from '../types/client.js';
 
 // Browser runtime for the game client.
 // This file owns:
@@ -42,33 +32,7 @@ import {
 // - websocket lifecycle
 // - keyboard input capture
 // The server remains authoritative for room state and simulation.
-type ConnectionPhase = 'idle' | 'creating' | 'connecting' | 'connected' | 'error';
-type SetupPanelMode = 'hidden' | 'share' | 'join';
-
-interface AppState {
-  roomId: string | null;
-  roomLink: string | null;
-  slot: PlayerSlot | null;
-  roomState: RoomState | null;
-  phase: ConnectionPhase;
-  feedback: string;
-  setupPanelMode: SetupPanelMode;
-}
-
-interface RoomSnapshot {
-  receivedAtMs: number;
-  state: RoomState;
-}
-
-interface PlayerCardRefs {
-  item: HTMLLIElement;
-  scoreCluster: HTMLDivElement;
-  scoreCircle: HTMLSpanElement;
-  crown: HTMLSpanElement;
-  badge: HTMLSpanElement;
-  marker: HTMLSpanElement;
-  detail: HTMLSpanElement;
-}
+// Type definitions (AppState, Cloud, RoomSnapshot, …) live in src/types/client.ts.
 
 const PLAYER_GLOW: Record<PlayerSlot, string> = {
   left:  'rgba(212, 85, 45, 0.32)',
@@ -93,8 +57,6 @@ const BUILDING_IMAGES: Record<PlayerSlot, HTMLImageElement> = {
 
 const horizonImage = loadImage(`/images/${HORIZON_CONFIG.image}`);
 
-interface CloudPuff { dx: number; dy: number; r: number; }
-interface Cloud { x: number; y: number; puffs: CloudPuff[]; foreground: boolean; }
 
 function generateClouds(): Cloud[] {
   const count = 5 + Math.floor(Math.random() * 6); // 5–10 clouds
@@ -649,10 +611,7 @@ const editableRunwayConfig: Record<PlayerSlot, RunwayConfig> = {
   right: { ...DEFAULT_RUNWAY_CONFIG.right }
 };
 
-type StatsInputMap = Record<keyof PlaneStats, HTMLInputElement>;
 const statsInputs: Partial<Record<PlayerSlot, StatsInputMap>> = {};
-
-type RunwayInputMap = Record<keyof RunwayConfig, HTMLInputElement>;
 const runwayInputs: Partial<Record<PlayerSlot, RunwayInputMap>> = {};
 
 const TELEMETRY_ROWS = [

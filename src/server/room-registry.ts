@@ -6,13 +6,11 @@ import {
   createDefaultInputState,
   createDefaultPlaneState,
   createDefaultPlayerState,
-  type CreateRoomResponse,
-  type InputState,
-  type PlayerSlot,
-  type RoomState,
-  type ServerErrorCode
 } from '../shared/game.js';
-import { DEFAULT_PLANE_CONFIG, DEFAULT_RUNWAY_CONFIG, type PlaneStats, type RunwayConfig } from '../shared/game-config.js';
+import { DEFAULT_PLANE_CONFIG, DEFAULT_RUNWAY_CONFIG } from '../shared/game-config.js';
+import type { CreateRoomResponse, InputState, PlayerSlot, RoomState, ServerErrorCode } from '../types/game.js';
+import type { PlaneStats, RunwayConfig } from '../types/config.js';
+import type { JoinFailureCode, JoinRoomResult, RoomRecord } from '../types/server.js';
 
 // RoomRegistry owns all long-lived multiplayer state that is not part of the
 // frame-by-frame flight simulation:
@@ -20,44 +18,13 @@ import { DEFAULT_PLANE_CONFIG, DEFAULT_RUNWAY_CONFIG, type PlaneStats, type Runw
 // - slot assignment
 // - reconnect reservation for active rounds
 // - rematch voting and round resets
+// Type definitions (RoomRecord, JoinRoomResult) live in src/types/server.ts.
 const ROOM_ID_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const ROOM_ID_LENGTH = 6;
 const ROOM_ID_PATTERN = new RegExp(`^[${ROOM_ID_ALPHABET}]{${ROOM_ID_LENGTH}}$`);
 const DEFAULT_ROOM_TTL_MS = 15 * 60 * 1000;
 const ACTIVE_RECONNECT_GRACE_MS = 3_000;
 
-type JoinFailureCode = Extract<
-  ServerErrorCode,
-  'room_not_found' | 'room_full' | 'room_expired' | 'invalid_room'
->;
-
-export interface RoomRecord {
-  state: RoomState;
-  sockets: Partial<Record<PlayerSlot, WebSocket>>;
-  // Active-round disconnects do not immediately forfeit the round.
-  // A short grace timer gives refresh/reconnect a chance to reclaim the slot.
-  disconnectTimers: Partial<Record<PlayerSlot, ReturnType<typeof setTimeout>>>;
-  // Each slot gets a private reconnect token. A reconnecting browser must
-  // present the matching token to reclaim a live slot during the grace window.
-  reconnectTokens: Record<PlayerSlot, string>;
-  // Per-slot simulation parameters. Starts from defaults; debug clients can
-  // update them live via the plane_stats_update websocket message.
-  planeStats: Record<PlayerSlot, PlaneStats>;
-  // Per-slot runway geometry. Debug clients can update via runway_config_update.
-  runwayConfig: Record<PlayerSlot, RunwayConfig>;
-}
-
-export type JoinRoomResult =
-  | {
-      ok: true;
-      reconnectToken: string;
-      room: RoomRecord;
-      slot: PlayerSlot;
-    }
-  | {
-      ok: false;
-      code: JoinFailureCode;
-    };
 
 export class RoomRegistry {
   private readonly rooms = new Map<string, RoomRecord>();

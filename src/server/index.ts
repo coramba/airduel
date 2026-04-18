@@ -8,11 +8,10 @@ import WebSocket, { WebSocketServer, type RawData } from 'ws';
 import {
   isInputState,
   PLAYER_SLOTS,
-  type ClientMessage,
-  type ServerErrorCode,
-  type ServerMessage
 } from '../shared/game.js';
 import { isPlaneStats, isRunwayConfig } from '../shared/game-config.js';
+import type { ClientMessage, ServerErrorCode, ServerMessage } from '../types/game.js';
+import type { RequestLike } from '../types/server.js';
 import { normalizeRoomId, RoomRegistry } from './room-registry.js';
 import { SIMULATION_TICK_MS, stepRoom } from './simulation.js';
 
@@ -20,6 +19,7 @@ import { SIMULATION_TICK_MS, stepRoom } from './simulation.js';
 // This file deliberately stays small:
 // - HTTP serves static assets plus a tiny room-creation API
 // - WebSocket upgrades join authoritative rooms and stream room state updates
+// Types used here (ClientMessage, ServerMessage, RequestLike) are imported from src/types/.
 const publicRoot = resolve(process.cwd(), 'public');
 const buildRoot = resolve(process.cwd(), 'dist');
 const host = process.env.HOST ?? '0.0.0.0';
@@ -317,9 +317,3 @@ function getRoomErrorMessage(code: ServerErrorCode): string {
   }
 }
 
-interface RequestLike {
-  headers: {
-    host?: string;
-    'x-forwarded-proto'?: string | string[];
-  };
-}

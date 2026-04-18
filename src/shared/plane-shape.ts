@@ -1,19 +1,8 @@
-// Shared plane geometry.
+// Shared plane geometry data and transform helpers.
+// Type definitions (PlanePoint, PlaneGeometry) live in src/types/geometry.ts.
 // Collision polygons are the authoritative hitboxes used by both the server
 // simulation and the client debug overlay. Visual rendering uses PNG images.
-export interface PlanePoint {
-    x: number;
-    y: number;
-}
-
-export interface PlaneGeometry {
-    renderOffsetY: number;
-    // Pixel offset within the plane PNG where the local origin (0,0) sits.
-    // Adjust this to align the image with the physics position.
-    imagePivot?: PlanePoint;
-    muzzlePoint: PlanePoint;
-    collisionPolygons: readonly (readonly PlanePoint[])[];
-}
+import type { PlaneGeometry, PlanePoint } from '../types/geometry.js';
 
 export const PLANE_GEOMETRY: PlaneGeometry = {
     "renderOffsetY": -16,
@@ -21,38 +10,14 @@ export const PLANE_GEOMETRY: PlaneGeometry = {
     "muzzlePoint": {"x": 10, "y": 10},
     "collisionPolygons": [
         [
-            {
-                "x": 20,
-                "y": 10
-            },
-            {
-                "x": 10,
-                "y": 0
-            },
-            {
-                "x": -15,
-                "y": 2
-            },
-            {
-                "x": -35,
-                "y": 10
-            },
-            {
-                "x": -40,
-                "y": 0
-            },
-            {
-                "x": -50,
-                "y": 0
-            },
-            {
-                "x": -50,
-                "y": 20
-            },
-            {
-                "x": 10,
-                "y": 20
-            }
+            { "x": 20,  "y": 10 },
+            { "x": 10,  "y": 0  },
+            { "x": -15, "y": 2  },
+            { "x": -35, "y": 10 },
+            { "x": -40, "y": 0  },
+            { "x": -50, "y": 0  },
+            { "x": -50, "y": 20 },
+            { "x": 10,  "y": 20 }
         ]
     ]
 };
