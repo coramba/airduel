@@ -4,8 +4,8 @@ import { PLANE_GEOMETRY } from './plane-shape.js';
 // Shared runtime constants and factory/validation functions.
 // Type definitions live in src/types/game.ts.
 // Both the browser client and the Node server import this file.
-export const GAME_WIDTH = 960;
-export const GAME_HEIGHT = 648;
+export const GAME_WIDTH = 1650;
+export const GAME_HEIGHT = 640;
 export const GROUND_HEIGHT = 72;
 export const RUNWAY_HEIGHT = 14;
 export const GROUND_Y = GAME_HEIGHT - GROUND_HEIGHT;
@@ -31,7 +31,8 @@ export function createDefaultInputState(): InputState {
 // Planes always reset to a known grounded spawn position.
 // The server reuses this for new rooms, rematches, and disconnect resets.
 export function createDefaultPlaneState(slot: PlayerSlot): PlaneState {
-  const x = slot === 'left' ? 48 : GAME_WIDTH - 48;
+  const defaultSpawnMargin = 60;
+  const x = slot === 'left' ? defaultSpawnMargin : GAME_WIDTH - defaultSpawnMargin;
 
   return {
     position: { x, y: GROUNDED_PLANE_Y },

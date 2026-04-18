@@ -1,6 +1,6 @@
 // Shared gameplay configuration: asset names, defaults, field descriptors, and validators.
 // Type definitions (PlaneStats, RunwayConfig, …) live in src/types/config.ts.
-import { GAME_HEIGHT, GROUND_HEIGHT, RUNWAY_HEIGHT } from './game.js';
+import { GAME_HEIGHT, GAME_WIDTH, GROUND_HEIGHT, RUNWAY_HEIGHT } from './game.js';
 import type { PlayerSlot } from '../types/game.js';
 import type { RoundSettings } from '../types/game.js';
 import type {
@@ -15,7 +15,7 @@ export const FLAG_CONFIG = {
   imageNeutral: 'flag_n.png',
   imageLeft:    'flag_l.png',
   imageRight:   'flag_r.png',
-  x:       430,
+  x:       Math.round(GAME_WIDTH / 2) - 46,
   offsetX:  46,
   offsetY:   13,
 };
@@ -82,7 +82,7 @@ export const DEFAULT_RUNWAY_CONFIG: Record<PlayerSlot, RunwayConfig> = {
     buildingOffsetY: 0,
   },
   right: {
-    startX: 955,
+    startX: GAME_WIDTH - 5,
     startY: DEFAULT_RUNWAY_START_Y,
     length: 240,
     buildingImage: 'buildings_r.png',
@@ -93,11 +93,11 @@ export const DEFAULT_RUNWAY_CONFIG: Record<PlayerSlot, RunwayConfig> = {
 
 export const DEFAULT_SPAWN_X: Record<PlayerSlot, number> = {
   left: 60,
-  right: 900
+  right: GAME_WIDTH - 60
 };
 
 export function isSpawnX(value: unknown): value is number {
-  return typeof value === 'number' && value > 0;
+  return typeof value === 'number' && value > 0 && value <= GAME_WIDTH;
 }
 
 export const PLANE_STATS_FIELDS: readonly PlaneStatsField[] = [

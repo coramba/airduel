@@ -559,16 +559,21 @@ function drawBullet(context: CanvasRenderingContext2D, bullet: BulletState): voi
 function drawRoundResult(context: CanvasRenderingContext2D, appState: AppState, roomState: RoomState): void {
   const resultLine = getRoundResultText(roomState, appState.slot);
   const subLine = getRoundOverlayMessage(appState);
+  const boxWidth = 560;
+  const boxHeight = 148;
+  const boxX = Math.round((GAME_WIDTH - boxWidth) / 2);
+  const boxY = Math.round(GAME_HEIGHT * 0.285);
+  const textX = boxX + 36;
 
   context.fillStyle = 'rgba(14, 26, 38, 0.74)';
   context.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
   context.fillStyle = '#fff9ef';
-  context.fillRect(200, 185, 560, 148);
+  context.fillRect(boxX, boxY, boxWidth, boxHeight);
   context.fillStyle = '#15314b';
   context.font = '700 36px "Trebuchet MS", sans-serif';
-  context.fillText(resultLine, 236, 244);
+  context.fillText(resultLine, textX, boxY + 59);
   context.font = '18px "Trebuchet MS", sans-serif';
-  drawWrappedText(context, subLine, 236, 282, 488, 24);
+  drawWrappedText(context, subLine, textX, boxY + 97, boxWidth - 72, 24);
 }
 
 // Simple canvas word-wrapping helper reused by the waiting HUD and the
