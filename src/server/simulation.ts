@@ -10,6 +10,7 @@ import {
   createDefaultInputState,
   createDefaultPlaneState,
   type BulletState,
+  type InputState,
   type PlaneState,
   type PlayerSlot,
   type RoundOutcome
@@ -51,6 +52,12 @@ export function stepRoom(room: RoomRecord): boolean {
 
   if (room.state.explosionRemainingMs > 0) {
     room.state.explosionRemainingMs = Math.max(0, room.state.explosionRemainingMs - SIMULATION_TICK_MS);
+    for (const player of room.state.players) {
+      if (player.plane.phase === 'destroyed') continue;
+      const stats = room.planeStats[player.slot];
+      player.plane.shotCooldownMs = Math.max(0, player.plane.shotCooldownMs - SIMULATION_TICK_MS);
+      updateAlivePlane(player.slot, player.plane, player.input, stats);
+    }
     if (room.state.explosionRemainingMs === 0) {
       finalizeRound(room);
     }
@@ -151,8 +158,8 @@ export function stepRoom(room: RoomRecord): boolean {
         player.plane.phase = 'destroyed';
         player.plane.velocity.x = 0;
         player.plane.velocity.y = 0;
+        player.input = createDefaultInputState();
       }
-      player.input = createDefaultInputState();
     }
     room.state.bullets = [];
     room.state.explosionRemainingMs = EXPLOSION_DURATION_MS;
@@ -165,6 +172,23 @@ export function stepRoom(room: RoomRecord): boolean {
   }
 
   return changed;
+}
+
+function updateAlivePlane(slot: PlayerSlot, plane: PlaneState, input: InputState, stats: PlaneStats): void {
+  switch (plane.phase) {
+    case 'airborne':
+      updateAirbornePlane(slot, plane, input, stats);
+      break;
+    case 'stall':
+      updateStalledPlane(slot, plane, stats);
+      break;
+    case 'runway':
+      updateRunwayPlane(slot, plane, input, stats);
+      break;
+    case 'landing':
+      updateLandingPlane(slot, plane, stats, input);
+      break;
+  }
 }
 
 function updateParkedPlane(slot: PlayerSlot, plane: PlaneState, input: { launchPressed: boolean }, runway: RunwayConfig): boolean {

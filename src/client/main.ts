@@ -86,6 +86,38 @@ const PLANE_IMAGES: Record<PlayerSlot, HTMLImageElement> = {
 };
 
 const horizonImage = loadImage('/images/horizon2.png');
+
+interface CloudPuff { dx: number; dy: number; r: number; }
+interface Cloud { x: number; y: number; puffs: CloudPuff[]; foreground: boolean; }
+
+function generateClouds(): Cloud[] {
+  const count = 5 + Math.floor(Math.random() * 6); // 5–10 clouds
+  const clouds: Cloud[] = [];
+  for (let i = 0; i < count; i++) {
+    const puffCount = 3 + Math.floor(Math.random() * 3); // 3–5 puffs
+    const puffs: CloudPuff[] = [];
+    // Walk along the X axis so the cloud is always wider than a single circle.
+    // Each puff overlaps the previous by 40–60% of its radius.
+    let curX = 0;
+    for (let p = 0; p < puffCount; p++) {
+      const r = 13 + Math.random() * 35;
+      puffs.push({ dx: curX, dy: (Math.random() - 0.5) * 12, r });
+      curX += r * (0.45 + Math.random() * 0.35);
+    }
+    const span = curX;
+    for (const puff of puffs) puff.dx -= span / 2;
+    clouds.push({
+      x: 60 + Math.random() * (GAME_WIDTH - 120),
+      y: 50 + Math.random() * 140,
+      puffs,
+      foreground: Math.random() < 2 / 3
+    });
+  }
+  return clouds;
+}
+
+const CLOUDS = generateClouds();
+
 const EXPLOSION_GROW_MS = 300;
 const EXPLOSION_SHRINK_MS = 400;
 
@@ -148,6 +180,8 @@ function drawScene(
     drawPlane(context, player, appState.slot === player.slot);
   }
 
+  drawClouds(context, true);
+
   if (shouldShowHud(roomState)) {
     drawHud(context, appState, roomState);
   }
@@ -185,18 +219,19 @@ function drawBackground(context: CanvasRenderingContext2D): void {
   context.fillStyle = '#477f34';
   context.fillRect(0, GAME_HEIGHT - GROUND_HEIGHT, GAME_WIDTH, 10);
 
-  context.fillStyle = 'rgba(255, 255, 255, 0.85)';
-  context.beginPath();
-  context.arc(156, 98, 34, 0, Math.PI * 2);
-  context.arc(185, 98, 24, 0, Math.PI * 2);
-  context.arc(132, 110, 24, 0, Math.PI * 2);
-  context.fill();
+  drawClouds(context, false);
+}
 
-  context.beginPath();
-  context.arc(760, 72, 30, 0, Math.PI * 2);
-  context.arc(790, 72, 22, 0, Math.PI * 2);
-  context.arc(735, 84, 20, 0, Math.PI * 2);
-  context.fill();
+function drawClouds(context: CanvasRenderingContext2D, foreground: boolean): void {
+  context.fillStyle = 'rgba(255, 255, 255, 0.85)';
+  for (const cloud of CLOUDS) {
+    if (cloud.foreground !== foreground) continue;
+    for (const puff of cloud.puffs) {
+      context.beginPath();
+      context.arc(cloud.x + puff.dx, cloud.y + puff.dy, puff.r, 0, Math.PI * 2);
+      context.fill();
+    }
+  }
 }
 
 // Runways are drawn separately from the simulation so the shared geometry stays

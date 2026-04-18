@@ -21,8 +21,8 @@ export const RUNWAY_CONFIG_FIELDS: readonly RunwayConfigField[] = [
 ];
 
 export const DEFAULT_RUNWAY_CONFIG: Record<PlayerSlot, RunwayConfig> = {
-  left:  { startX: 5,  length: 200, spawnX: 60  },
-  right: { startX: 955, length: 200, spawnX: 900 },
+  left:  { startX: 5,  length: 240, spawnX: 60  },
+  right: { startX: 955, length: 240, spawnX: 900 },
 };
 
 export function isRunwayConfig(value: unknown): value is RunwayConfig {
@@ -79,7 +79,7 @@ export const DEFAULT_PLANE_STATS: Record<PlayerSlot, PlaneStats> = {
     stallThreshold:       70,
     diveExitDistance:     300,
     allowedLandingSpeed:  120,
-    brakingDeceleration:  80,
+    brakingDeceleration:  95,
     bulletSpeed:          440,
     bulletRange:          480,
     bulletRadius:         2,
@@ -92,11 +92,11 @@ export const DEFAULT_PLANE_STATS: Record<PlayerSlot, PlaneStats> = {
     stallThreshold:       70,
     diveExitDistance:     300,
     allowedLandingSpeed:  120,
-    brakingDeceleration:  80,
+    brakingDeceleration:  95,
     bulletSpeed:          480,
-    bulletRange:          500,
+    bulletRange:          550,
     bulletRadius:         2,
-    fireCooldownMs:       200
+    fireCooldownMs:       160
   }
 };
 
