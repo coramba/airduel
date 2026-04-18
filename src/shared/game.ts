@@ -1,4 +1,5 @@
 import type { PlayerSlot, InputState, PlaneState, PlayerState } from '../types/game.js';
+import { PLANE_GEOMETRY } from './plane-shape.js';
 
 // Shared runtime constants and factory/validation functions.
 // Type definitions live in src/types/game.ts.
@@ -7,7 +8,9 @@ export const GAME_WIDTH = 960;
 export const GAME_HEIGHT = 648;
 export const GROUND_HEIGHT = 72;
 export const RUNWAY_HEIGHT = 14;
-export const RUNWAY_PLANE_Y = GAME_HEIGHT - GROUND_HEIGHT - RUNWAY_HEIGHT / 2;
+export const GROUND_Y = GAME_HEIGHT - GROUND_HEIGHT;
+export const GROUND_CONTACT_Y = GROUND_Y;
+export const GROUNDED_PLANE_Y = GROUND_Y - getGroundedPlaneOffset();
 export const PLANE_WRAP_MARGIN = 24;
 export const BULLET_WRAP_MARGIN = 80;
 export const ROOM_ID_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -25,18 +28,16 @@ export function createDefaultInputState(): InputState {
   };
 }
 
-// Planes always reset to a known runway spawn position.
+// Planes always reset to a known grounded spawn position.
 // The server reuses this for new rooms, rematches, and disconnect resets.
-export function createDefaultPlaneState(slot: PlayerSlot, runwayStartX?: number): PlaneState {
-  const defaultX = slot === 'left' ? 48 : GAME_WIDTH - 48;
-  const x = runwayStartX ?? defaultX;
+export function createDefaultPlaneState(slot: PlayerSlot): PlaneState {
+  const x = slot === 'left' ? 48 : GAME_WIDTH - 48;
 
   return {
-    position: { x, y: RUNWAY_PLANE_Y },
+    position: { x, y: GROUNDED_PLANE_Y },
     velocity: { x: 0, y: 0 },
     angle: slot === 'left' ? 0 : Math.PI,
     phase: 'parked',
-    runwayTimeMs: 0,
     shotCooldownMs: 0,
     stallRemainingPx: 0
   };
@@ -77,4 +78,16 @@ export function normalizeRoomId(roomId: string | null | undefined): string | nul
 
   const normalizedRoomId = roomId.trim().toUpperCase();
   return ROOM_ID_PATTERN.test(normalizedRoomId) ? normalizedRoomId : null;
+}
+
+function getGroundedPlaneOffset(): number {
+  let maxCollisionY = 0;
+
+  for (const polygon of PLANE_GEOMETRY.collisionPolygons) {
+    for (const point of polygon) {
+      maxCollisionY = Math.max(maxCollisionY, point.y);
+    }
+  }
+
+  return maxCollisionY + PLANE_GEOMETRY.renderOffsetY;
 }

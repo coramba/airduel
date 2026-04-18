@@ -10,10 +10,10 @@ import {
   createDefaultPlayerState,
   normalizeRoomId,
 } from '../shared/game.js';
-import { createDefaultRoundSettings, DEFAULT_PLANE_CONFIG, DEFAULT_RUNWAY_CONFIG } from '../shared/game-config.js';
-import type { CreateRoomResponse, InputState, PlayerSlot, RoomState, ServerErrorCode } from '../types/game.js';
-import type { PlaneStats, RunwayConfig } from '../types/config.js';
-import type { JoinFailureCode, JoinRoomResult, RoomRecord } from '../types/server.js';
+import { createDefaultRoundSettings, DEFAULT_PLANE_CONFIG, DEFAULT_SPAWN_X } from '../shared/game-config.js';
+import type { CreateRoomResponse, InputState, PlayerSlot } from '../types/game.js';
+import type { PlaneStats } from '../types/config.js';
+import type { JoinRoomResult, RoomRecord } from '../types/server.js';
 
 // RoomRegistry owns all long-lived multiplayer state that is not part of the
 // frame-by-frame flight simulation:
@@ -55,10 +55,9 @@ export class RoomRegistry {
         bullets: [],
         rematchVotes: [],
         winner: null,
-        explosionRemainingMs: 0,
-        createdAt: now,
-        lastActivityAt: now
+        explosionRemainingMs: 0
       },
+      lastActivityAt: now,
       sockets: {},
       disconnectTimers: {},
       reconnectTokens: {
@@ -69,10 +68,7 @@ export class RoomRegistry {
         left:  { ...DEFAULT_PLANE_CONFIG.left  },
         right: { ...DEFAULT_PLANE_CONFIG.right }
       },
-      runwayConfig: {
-        left:  { ...DEFAULT_RUNWAY_CONFIG.left  },
-        right: { ...DEFAULT_RUNWAY_CONFIG.right }
-      }
+      spawnX: { ...DEFAULT_SPAWN_X }
     };
 
     this.rooms.set(roomId, room);
@@ -150,7 +146,7 @@ export class RoomRegistry {
       // Reconnecting into a live round should resume the current round in place,
       // not reset planes or increment the round counter.
       room.state.message = `Round ${room.state.round} live.`;
-      room.state.lastActivityAt = Date.now();
+      room.lastActivityAt = Date.now();
     } else {
       const shouldIncrementRound = room.state.status === 'round_over';
       if (this.connectedPlayerCount(room) === PLAYER_SLOTS.length) {
@@ -205,7 +201,7 @@ export class RoomRegistry {
     }
 
     player.input = { ...input };
-    room.state.lastActivityAt = Date.now();
+    room.lastActivityAt = Date.now();
     return room;
   }
 
@@ -224,7 +220,7 @@ export class RoomRegistry {
       room.state.rematchVotes.push(slot);
     }
 
-    room.state.lastActivityAt = Date.now();
+    room.lastActivityAt = Date.now();
 
     if (
       this.connectedPlayerCount(room) === PLAYER_SLOTS.length &&
@@ -247,10 +243,10 @@ export class RoomRegistry {
     }
   }
 
-  updateRunwayConfig(roomId: string, slot: PlayerSlot, config: RunwayConfig): void {
+  updateSpawnX(roomId: string, slot: PlayerSlot, spawnX: number): void {
     const room = this.getRoom(roomId);
     if (room) {
-      room.runwayConfig[slot] = { ...config };
+      room.spawnX[slot] = spawnX;
     }
   }
 
@@ -272,7 +268,7 @@ export class RoomRegistry {
       return false;
     }
 
-    return Date.now() - room.state.lastActivityAt > this.roomTtlMs;
+    return Date.now() - room.lastActivityAt > this.roomTtlMs;
   }
 
   private setPlayerConnected(room: RoomRecord, slot: PlayerSlot, connected: boolean): void {
@@ -293,7 +289,8 @@ export class RoomRegistry {
   private resetPlayersToSpawn(room: RoomRecord): void {
     for (const player of room.state.players) {
       player.input = createDefaultInputState();
-      player.plane = createDefaultPlaneState(player.slot, room.runwayConfig[player.slot].spawnX);
+      player.plane = createDefaultPlaneState(player.slot);
+      player.plane.position.x = room.spawnX[player.slot];
     }
   }
 
@@ -316,7 +313,7 @@ export class RoomRegistry {
     room.state.message = `Round ${room.state.round} live.`;
     room.state.roundSettings = createDefaultRoundSettings(createRandomSeed());
     this.clearRoundState(room);
-    room.state.lastActivityAt = Date.now();
+    room.lastActivityAt = Date.now();
     this.resetPlayersToSpawn(room);
   }
 
@@ -328,7 +325,7 @@ export class RoomRegistry {
     room.state.status = 'waiting';
     room.state.message = message;
     this.clearRoundState(room);
-    room.state.lastActivityAt = Date.now();
+    room.lastActivityAt = Date.now();
     this.resetPlayersToSpawn(room);
   }
 
@@ -347,7 +344,7 @@ export class RoomRegistry {
     this.clearRoundState(room);
     room.state.winner = remainingPlayer.slot === 'left' ? 'left_win' : 'right_win';
     remainingPlayer.wins += 1;
-    room.state.lastActivityAt = Date.now();
+    room.lastActivityAt = Date.now();
     this.resetPlayerInputs(room);
 
     const departedPlayer = room.state.players.find((player) => player.slot === departedSlot);
@@ -362,7 +359,7 @@ export class RoomRegistry {
     // The room stays active during the grace window so simulation state is
     // preserved exactly as it was at disconnect time.
     room.state.message = 'Pilot disconnected. Waiting briefly for reconnect.';
-    room.state.lastActivityAt = Date.now();
+    room.lastActivityAt = Date.now();
 
     const timer = setTimeout(() => {
       const latestRoom = this.rooms.get(room.state.id);

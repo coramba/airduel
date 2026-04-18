@@ -1,4 +1,4 @@
-import type { CloudConfig, PlaneStats, RunwayConfig } from './config.js';
+import type { CloudConfig, PlaneStats } from './config.js';
 
 export type PlayerSlot = 'left' | 'right';
 export type RoomStatus = 'waiting' | 'active' | 'round_over';
@@ -28,7 +28,6 @@ export interface PlaneState {
   velocity: Vector2;
   angle: number;
   phase: PlanePhase;
-  runwayTimeMs: number;
   shotCooldownMs: number;
   stallRemainingPx: number;
 }
@@ -65,8 +64,6 @@ export interface RoomState {
   rematchVotes: PlayerSlot[];
   winner: RoundOutcome | null;
   explosionRemainingMs: number;
-  createdAt: number;
-  lastActivityAt: number;
 }
 
 export interface CreateRoomResponse {
@@ -78,7 +75,7 @@ export type ClientMessage =
   | { type: 'input'; payload: InputState }
   | { type: 'rematch_requested' }
   | { type: 'plane_stats_update'; payload: { slot: PlayerSlot; stats: PlaneStats } }
-  | { type: 'runway_config_update'; payload: { slot: PlayerSlot; config: RunwayConfig } };
+  | { type: 'spawn_x_update'; payload: { slot: PlayerSlot; spawnX: number } };
 
 export type ServerMessage =
   | { type: 'room_state'; payload: RoomState }

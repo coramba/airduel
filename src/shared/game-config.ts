@@ -3,7 +3,13 @@
 import { GAME_HEIGHT, GROUND_HEIGHT, RUNWAY_HEIGHT } from './game.js';
 import type { PlayerSlot } from '../types/game.js';
 import type { RoundSettings } from '../types/game.js';
-import type { CloudConfig, PlaneStats, PlaneStatsField, RunwayConfig, RunwayConfigField } from '../types/config.js';
+import type {
+  CloudConfig,
+  PlaneStats,
+  PlaneStatsField,
+  RunwayConfig,
+  RunwayConfigField
+} from '../types/config.js';
 
 export const FLAG_CONFIG = {
   imageNeutral: 'flag_n.png',
@@ -59,10 +65,10 @@ export const RUNWAY_CONFIG_FIELDS: readonly RunwayConfigField[] = [
   { key: 'startX',          label: 'Runway start X (px)',    step: 5 },
   { key: 'startY',          label: 'Runway start Y (px)',    step: 5 },
   { key: 'length',          label: 'Runway length (px)',     step: 5 },
-  { key: 'spawnX',          label: 'Spawn X (px)',           step: 5 },
   { key: 'buildingOffsetX', label: 'Building offset X (px)', step: 1 },
   { key: 'buildingOffsetY', label: 'Building offset Y (px)', step: 1 },
 ];
+export const SPAWN_X_STEP = 5;
 
 const DEFAULT_RUNWAY_START_Y = GAME_HEIGHT - GROUND_HEIGHT - RUNWAY_HEIGHT + 12;
 
@@ -71,7 +77,6 @@ export const DEFAULT_RUNWAY_CONFIG: Record<PlayerSlot, RunwayConfig> = {
     startX: 5,
     startY: DEFAULT_RUNWAY_START_Y,
     length: 240,
-    spawnX: 60,
     buildingImage: 'buildings_l.png',
     buildingOffsetX: 80,
     buildingOffsetY: 0,
@@ -80,27 +85,19 @@ export const DEFAULT_RUNWAY_CONFIG: Record<PlayerSlot, RunwayConfig> = {
     startX: 955,
     startY: DEFAULT_RUNWAY_START_Y,
     length: 240,
-    spawnX: 900,
     buildingImage: 'buildings_r.png',
     buildingOffsetX: -80,
     buildingOffsetY: 0,
   },
 };
 
-export function isRunwayConfig(value: unknown): value is RunwayConfig {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-  const c = value as Record<string, unknown>;
-  return (
-    typeof c.startX          === 'number' && c.startX > 0 &&
-    typeof c.startY          === 'number' && c.startY > 0 &&
-    typeof c.length          === 'number' && c.length > 0 &&
-    typeof c.spawnX          === 'number' && c.spawnX > 0 &&
-    typeof c.buildingImage   === 'string' && c.buildingImage.length > 0 &&
-    typeof c.buildingOffsetX === 'number' &&
-    typeof c.buildingOffsetY === 'number'
-  );
+export const DEFAULT_SPAWN_X: Record<PlayerSlot, number> = {
+  left: 60,
+  right: 900
+};
+
+export function isSpawnX(value: unknown): value is number {
+  return typeof value === 'number' && value > 0;
 }
 
 export const PLANE_STATS_FIELDS: readonly PlaneStatsField[] = [

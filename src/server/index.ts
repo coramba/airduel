@@ -10,7 +10,7 @@ import {
   normalizeRoomId,
   PLAYER_SLOTS,
 } from '../shared/game.js';
-import { isPlaneStats, isRunwayConfig } from '../shared/game-config.js';
+import { isPlaneStats, isSpawnX } from '../shared/game-config.js';
 import type { ClientMessage, ServerErrorCode, ServerMessage } from '../types/game.js';
 import type { RequestLike } from '../types/server.js';
 import { RoomRegistry } from './room-registry.js';
@@ -162,12 +162,12 @@ function handleClientMessage(socket: WebSocket, rawMessage: RawData): void {
       return;
     }
 
-    if (parsedMessage.type === 'runway_config_update') {
+    if (parsedMessage.type === 'spawn_x_update') {
       const { payload } = parsedMessage;
-      if (!PLAYER_SLOTS.includes(payload.slot) || !isRunwayConfig(payload.config)) {
-        throw new Error('Invalid runway config payload.');
+      if (!PLAYER_SLOTS.includes(payload.slot) || !isSpawnX(payload.spawnX)) {
+        throw new Error('Invalid spawn X payload.');
       }
-      roomRegistry.updateRunwayConfig(metadata.roomId, payload.slot, payload.config);
+      roomRegistry.updateSpawnX(metadata.roomId, payload.slot, payload.spawnX);
       return;
     }
 

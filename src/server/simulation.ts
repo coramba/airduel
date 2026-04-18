@@ -2,11 +2,9 @@ import {
   BULLET_WRAP_MARGIN,
   GAME_HEIGHT,
   GAME_WIDTH,
-  GROUND_HEIGHT,
-  PLAYER_SLOTS,
+  GROUND_CONTACT_Y,
+  GROUNDED_PLANE_Y,
   PLANE_WRAP_MARGIN,
-  RUNWAY_HEIGHT,
-  RUNWAY_PLANE_Y,
   createDefaultInputState,
   createDefaultPlaneState,
 } from '../shared/game.js';
@@ -18,7 +16,7 @@ import {
 } from '../shared/plane-shape.js';
 import { EXPLOSION_CONFIG, getEffectiveTurnRate } from '../shared/game-config.js';
 import type { BulletState, InputState, PlaneState, PlayerSlot, RoundOutcome } from '../types/game.js';
-import type { PlaneStats, RunwayConfig } from '../types/config.js';
+import type { PlaneStats } from '../types/config.js';
 import type { PlanePoint } from '../types/geometry.js';
 import type { RoomRecord } from '../types/server.js';
 
@@ -31,8 +29,6 @@ export const SIMULATION_TICK_MS = 1000 / 30;
 // Fixed simulation constants that are not exposed for per-plane tuning.
 const DT_SECONDS = SIMULATION_TICK_MS / 1000;
 const SKY_MARGIN = 28;
-
-const runwayImpactY = GAME_HEIGHT - GROUND_HEIGHT - RUNWAY_HEIGHT / 2;
 
 let nextBulletId = 1;
 
@@ -60,7 +56,7 @@ export function stepRoom(room: RoomRecord): boolean {
       const phase = player.plane.phase;
       if ((phase === 'airborne' || phase === 'stall') &&
           player.plane.velocity.y >= 0 &&
-          lowestCollisionY(player.slot, player.plane) >= runwayImpactY) {
+          lowestCollisionY(player.slot, player.plane) >= GROUND_CONTACT_Y) {
         const localDestroyed = new Set<PlayerSlot>();
         resolveGroundContact(player.slot, player.plane, stats, localDestroyed);
         if (localDestroyed.has(player.slot)) {
@@ -73,7 +69,7 @@ export function stepRoom(room: RoomRecord): boolean {
     if (room.state.explosionRemainingMs === 0) {
       finalizeRound(room);
     }
-    room.state.lastActivityAt = Date.now();
+    room.lastActivityAt = Date.now();
     return true;
   }
 
@@ -88,20 +84,20 @@ export function stepRoom(room: RoomRecord): boolean {
 
     switch (plane.phase) {
       case 'parked':
-        changed = updateParkedPlane(player.slot, plane, player.input, room.runwayConfig[player.slot]) || changed;
+        changed = updateParkedPlane(player.slot, plane, player.input) || changed;
         break;
       case 'runway':
         changed = updateRunwayPlane(player.slot, plane, player.input, stats) || changed;
         break;
       case 'airborne':
         changed = updateAirbornePlane(player.slot, plane, player.input, stats) || changed;
-        if (plane.velocity.y >= 0 && lowestCollisionY(player.slot, plane) >= runwayImpactY) {
+        if (plane.velocity.y >= 0 && lowestCollisionY(player.slot, plane) >= GROUND_CONTACT_Y) {
           resolveGroundContact(player.slot, plane, stats, destroyedSlots);
         }
         break;
       case 'stall':
         changed = updateStalledPlane(player.slot, plane, stats) || changed;
-        if (plane.velocity.y >= 0 && lowestCollisionY(player.slot, plane) >= runwayImpactY) {
+        if (plane.velocity.y >= 0 && lowestCollisionY(player.slot, plane) >= GROUND_CONTACT_Y) {
           resolveGroundContact(player.slot, plane, stats, destroyedSlots);
         }
         break;
@@ -176,12 +172,12 @@ export function stepRoom(room: RoomRecord): boolean {
     room.state.bullets = [];
     room.state.explosionRemainingMs = EXPLOSION_CONFIG.durationMs;
     room.pendingOutcome = resolveOutcome(destroyedSlots);
-    room.state.lastActivityAt = Date.now();
+    room.lastActivityAt = Date.now();
     return true;
   }
 
   if (changed) {
-    room.state.lastActivityAt = Date.now();
+    room.lastActivityAt = Date.now();
   }
 
   return changed;
@@ -204,8 +200,8 @@ function updateAlivePlane(slot: PlayerSlot, plane: PlaneState, input: InputState
   }
 }
 
-function updateParkedPlane(slot: PlayerSlot, plane: PlaneState, input: { launchPressed: boolean }, runway: RunwayConfig): boolean {
-  const defaultPlane = createDefaultPlaneState(slot, runway.spawnX);
+function updateParkedPlane(slot: PlayerSlot, plane: PlaneState, input: { launchPressed: boolean }): boolean {
+  const defaultPlane = createDefaultPlaneState(slot);
   let changed = syncPlane(plane, defaultPlane);
 
   if (input.launchPressed) {
@@ -223,7 +219,6 @@ function updateRunwayPlane(
   stats: PlaneStats
 ): boolean {
   const direction = slotDirection(slot);
-  plane.runwayTimeMs += SIMULATION_TICK_MS;
   plane.angle = baseAngle(slot);
 
   // Speed ramps smoothly from 0 to airSpeed at the configured acceleration.
@@ -232,7 +227,7 @@ function updateRunwayPlane(
   plane.velocity.x = direction * newSpeed;
   plane.velocity.y = 0;
   plane.position.x += plane.velocity.x * DT_SECONDS;
-  plane.position.y = RUNWAY_PLANE_Y;
+  plane.position.y = GROUNDED_PLANE_Y;
   plane.position.x = wrapX(plane.position.x, PLANE_WRAP_MARGIN);
 
   // Lift-off becomes available once the plane has reached at least half airSpeed,
@@ -286,7 +281,7 @@ function resolveGroundContact(
 
   if (rightSideUp && plane.velocity.y < stats.allowedLandingSpeed) {
     plane.phase = 'landing';
-    plane.position.y = RUNWAY_PLANE_Y;
+    plane.position.y = GROUNDED_PLANE_Y;
     plane.velocity.y = 0;
     plane.angle = baseAngle(slot);
     plane.stallRemainingPx = 0;
@@ -301,7 +296,7 @@ function updateLandingPlane(
   stats: PlaneStats,
   input: { launchPressed: boolean }
 ): boolean {
-  plane.position.y = RUNWAY_PLANE_Y;
+  plane.position.y = GROUNDED_PLANE_Y;
   plane.velocity.y = 0;
   plane.angle = baseAngle(slot);
 
@@ -450,7 +445,6 @@ function syncPlane(target: PlaneState, source: PlaneState): boolean {
     target.velocity.y !== source.velocity.y ||
     target.angle !== source.angle ||
     target.phase !== source.phase ||
-    target.runwayTimeMs !== source.runwayTimeMs ||
     target.shotCooldownMs !== source.shotCooldownMs;
 
   target.position.x = source.position.x;
@@ -459,7 +453,6 @@ function syncPlane(target: PlaneState, source: PlaneState): boolean {
   target.velocity.y = source.velocity.y;
   target.angle = source.angle;
   target.phase = source.phase;
-  target.runwayTimeMs = source.runwayTimeMs;
   target.shotCooldownMs = source.shotCooldownMs;
 
   return changed;
@@ -637,11 +630,7 @@ function doSegmentsIntersect(
     return true;
   }
 
-  if (orientationD === 0 && isPointOnSegment(firstEnd, secondStart, secondEnd)) {
-    return true;
-  }
-
-  return false;
+  return orientationD === 0 && isPointOnSegment(firstEnd, secondStart, secondEnd);
 }
 
 function orientation(origin: PlanePoint, target: PlanePoint, point: PlanePoint): number {

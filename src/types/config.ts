@@ -2,7 +2,6 @@ export interface RunwayConfig {
   startX: number;
   startY: number;
   length: number;
-  spawnX: number;
   buildingImage: string;
   buildingOffsetX: number;
   buildingOffsetY: number;

@@ -2,12 +2,12 @@ import {
   BULLET_WRAP_MARGIN,
   GAME_HEIGHT,
   GAME_WIDTH,
+  GROUND_CONTACT_Y,
   GROUND_HEIGHT,
   PLAYER_SLOTS,
   PLANE_WRAP_MARGIN,
   ROOM_ID_LENGTH,
   RUNWAY_HEIGHT,
-  RUNWAY_PLANE_Y,
   createDefaultInputState,
   normalizeRoomId,
 } from '../shared/game.js';
@@ -19,17 +19,19 @@ import {
   CLOUD_CONFIG,
   DEFAULT_PLANE_CONFIG,
   DEFAULT_RUNWAY_CONFIG,
+  DEFAULT_SPAWN_X,
   EXPLOSION_CONFIG,
   FLAG_CONFIG,
   getEffectiveTurnRate,
   HORIZON_CONFIG,
   PLANE_STATS_FIELDS,
   RUNWAY_CONFIG_FIELDS,
+  SPAWN_X_STEP,
 } from '../shared/game-config.js';
 import type { BulletState, CreateRoomResponse, InputState, PlanePhase, PlaneState, PlayerSlot, PlayerState, RoomState, ServerErrorCode, ServerMessage } from '../types/game.js';
 import type { CloudConfig, PlaneStats, RunwayConfig } from '../types/config.js';
 import type { PlaneGeometry, PlanePoint } from '../types/geometry.js';
-import type { AppState, Cloud, CloudPuff, ConnectionPhase, PlayerCardRefs, RoomSnapshot, RunwayInputMap, SetupPanelMode, StatsInputMap } from '../types/client.js';
+import type { AppState, Cloud, CloudPuff, PlayerCardRefs, RoomSnapshot, RunwayInputMap, StatsInputMap } from '../types/client.js';
 
 // Browser runtime for the game client.
 // This file owns:
@@ -204,8 +206,8 @@ function drawScene(
     context.lineWidth = 1;
     context.setLineDash([6, 4]);
     context.beginPath();
-    context.moveTo(0, RUNWAY_PLANE_Y);
-    context.lineTo(GAME_WIDTH, RUNWAY_PLANE_Y);
+    context.moveTo(0, GROUND_CONTACT_Y);
+    context.lineTo(GAME_WIDTH, GROUND_CONTACT_Y);
     context.stroke();
     context.restore();
   }
@@ -684,11 +686,15 @@ const editablePlaneStats: Record<PlayerSlot, PlaneStats> = {
   right: { ...DEFAULT_PLANE_CONFIG.right }
 };
 
+const editableSpawnX: Record<PlayerSlot, number> = { ...DEFAULT_SPAWN_X };
+
+// Runway layout is decorative only, so edits stay local to the current browser.
 const editableRunwayConfig: Record<PlayerSlot, RunwayConfig> = {
   left:  { ...DEFAULT_RUNWAY_CONFIG.left  },
   right: { ...DEFAULT_RUNWAY_CONFIG.right }
 };
 
+const spawnInputs: Partial<Record<PlayerSlot, HTMLInputElement>> = {};
 const statsInputs: Partial<Record<PlayerSlot, StatsInputMap>> = {};
 const runwayInputs: Partial<Record<PlayerSlot, RunwayInputMap>> = {};
 
@@ -759,13 +765,13 @@ function sendPlaneStats(slot: PlayerSlot): void {
   }));
 }
 
-function sendRunwayConfig(slot: PlayerSlot): void {
+function sendSpawnX(slot: PlayerSlot): void {
   if (!socket || socket.readyState !== WebSocket.OPEN) {
     return;
   }
   socket.send(JSON.stringify({
-    type: 'runway_config_update',
-    payload: { slot, config: editableRunwayConfig[slot] }
+    type: 'spawn_x_update',
+    payload: { slot, spawnX: editableSpawnX[slot] }
   }));
 }
 
@@ -854,6 +860,62 @@ function syncNumericInputs<Key extends string>(
   }
 }
 
+function buildSpawnEditor(container: HTMLElement): void {
+  const grid = document.createElement('div');
+  grid.className = 'stats-editor-grid';
+
+  for (const slot of PLAYER_SLOTS) {
+    const column = document.createElement('div');
+    column.className = 'stats-column';
+
+    const heading = document.createElement('div');
+    heading.className = `stats-slot-heading stats-slot-${slot}`;
+    heading.textContent = `${formatSlot(slot)} Spawn`;
+    column.append(heading);
+
+    const fieldDiv = document.createElement('div');
+    fieldDiv.className = 'stats-field';
+
+    const label = document.createElement('label');
+    label.className = 'stats-field-label';
+    label.textContent = 'Spawn X (px)';
+
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.className = 'stats-input';
+    input.step = String(SPAWN_X_STEP);
+    input.min = String(SPAWN_X_STEP);
+    input.value = String(editableSpawnX[slot]);
+
+    input.addEventListener('change', () => {
+      const parsed = parseFloat(input.value);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        editableSpawnX[slot] = parsed;
+        sendSpawnX(slot);
+      } else {
+        input.value = String(editableSpawnX[slot]);
+      }
+    });
+
+    label.append(input);
+    fieldDiv.append(label);
+    column.append(fieldDiv);
+    grid.append(column);
+    spawnInputs[slot] = input;
+  }
+
+  container.append(grid);
+}
+
+function syncSpawnInputs(): void {
+  for (const slot of PLAYER_SLOTS) {
+    const input = spawnInputs[slot];
+    if (input && document.activeElement !== input) {
+      input.value = String(editableSpawnX[slot]);
+    }
+  }
+}
+
 // `render()` is the single place that synchronizes DOM controls from app state.
 // Gameplay visuals are rendered continuously by `requestAnimationFrame`, while
 // this UI sync only updates the DOM controls and side panel.
@@ -892,6 +954,7 @@ function render(): void {
   planeGeometryFeedbackElement.hidden = planeGeometryFeedback === '';
 
   syncNumericInputs(PLANE_STATS_FIELDS, editablePlaneStats, statsInputs);
+  syncSpawnInputs();
   syncNumericInputs(RUNWAY_CONFIG_FIELDS, editableRunwayConfig, runwayInputs);
 
   renderPlayerList();
@@ -1879,6 +1942,7 @@ buildNumericEditor(
     sendPlaneStats(slot);
   }
 );
+buildSpawnEditor(runwayConfigContainer);
 buildNumericEditor(
   runwayConfigContainer,
   'Runway',
@@ -1887,7 +1951,6 @@ buildNumericEditor(
   runwayInputs,
   (slot, key, value) => {
     editableRunwayConfig[slot] = { ...editableRunwayConfig[slot], [key]: value };
-    sendRunwayConfig(slot);
   }
 );
 render();
