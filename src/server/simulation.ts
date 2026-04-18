@@ -21,7 +21,7 @@ import {
   transformPlanePolygon,
   type PlanePoint
 } from '../shared/plane-shape.js';
-import { EXPLOSION_DURATION_MS, type PlaneStats } from '../shared/game-config.js';
+import { EXPLOSION_DURATION_MS, type PlaneStats, type RunwayConfig } from '../shared/game-config.js';
 import type { RoomRecord } from './room-registry.js';
 
 // Authoritative round simulation.
@@ -69,7 +69,7 @@ export function stepRoom(room: RoomRecord): boolean {
 
     switch (plane.phase) {
       case 'parked':
-        changed = updateParkedPlane(player.slot, plane, player.input, stats) || changed;
+        changed = updateParkedPlane(player.slot, plane, player.input, room.runwayConfig[player.slot]) || changed;
         break;
       case 'runway':
         changed = updateRunwayPlane(player.slot, plane, player.input, stats) || changed;
@@ -167,8 +167,8 @@ export function stepRoom(room: RoomRecord): boolean {
   return changed;
 }
 
-function updateParkedPlane(slot: PlayerSlot, plane: PlaneState, input: { launchPressed: boolean }, stats: PlaneStats): boolean {
-  const defaultPlane = createDefaultPlaneState(slot, stats.runwayStartX);
+function updateParkedPlane(slot: PlayerSlot, plane: PlaneState, input: { launchPressed: boolean }, runway: RunwayConfig): boolean {
+  const defaultPlane = createDefaultPlaneState(slot, runway.spawnX);
   let changed = syncPlane(plane, defaultPlane);
 
   if (input.launchPressed) {

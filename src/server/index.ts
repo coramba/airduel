@@ -12,7 +12,7 @@ import {
   type ServerErrorCode,
   type ServerMessage
 } from '../shared/game.js';
-import { isPlaneStats } from '../shared/game-config.js';
+import { isPlaneStats, isRunwayConfig } from '../shared/game-config.js';
 import { normalizeRoomId, RoomRegistry } from './room-registry.js';
 import { SIMULATION_TICK_MS, stepRoom } from './simulation.js';
 
@@ -158,6 +158,15 @@ function handleClientMessage(socket: WebSocket, rawMessage: RawData): void {
         throw new Error('Invalid plane stats payload.');
       }
       roomRegistry.updatePlaneStats(metadata.roomId, payload.slot, payload.stats);
+      return;
+    }
+
+    if (parsedMessage.type === 'runway_config_update') {
+      const { payload } = parsedMessage;
+      if (!PLAYER_SLOTS.includes(payload.slot) || !isRunwayConfig(payload.config)) {
+        throw new Error('Invalid runway config payload.');
+      }
+      roomRegistry.updateRunwayConfig(metadata.roomId, payload.slot, payload.config);
       return;
     }
 

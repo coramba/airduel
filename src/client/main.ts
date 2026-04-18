@@ -26,9 +26,12 @@ import {
 } from '../shared/plane-shape.js';
 import {
   DEFAULT_PLANE_STATS,
+  DEFAULT_RUNWAY_CONFIG,
   EXPLOSION_DURATION_MS,
   PLANE_STATS_FIELDS,
-  type PlaneStats
+  RUNWAY_CONFIG_FIELDS,
+  type PlaneStats,
+  type RunwayConfig
 } from '../shared/game-config.js';
 
 // Browser runtime for the game client.
@@ -202,14 +205,14 @@ function drawRunways(context: CanvasRenderingContext2D): void {
   const runwayY = GAME_HEIGHT - GROUND_HEIGHT - RUNWAY_HEIGHT;
 
   for (const slot of PLAYER_SLOTS) {
-    const { runwayStartX, runwayLength } = editablePlaneStats[slot];
-    const x = slot === 'left' ? runwayStartX : runwayStartX - runwayLength;
+    const { startX, length } = editableRunwayConfig[slot];
+    const x = slot === 'left' ? startX : startX - length;
 
     context.fillStyle = '#6d5a4d';
-    context.fillRect(x, runwayY, runwayLength, 14);
+    context.fillRect(x, runwayY, length, 14);
 
     context.fillStyle = 'rgba(255, 255, 255, 0.6)';
-    for (let mark = x + 12; mark + 10 <= x + runwayLength; mark += 22) {
+    for (let mark = x + 12; mark + 10 <= x + length; mark += 22) {
       context.fillRect(mark, runwayY + 5, 10, 4);
     }
   }
@@ -531,6 +534,7 @@ const planeTelemetryContainer = requireElement<HTMLDivElement>('#plane-telemetry
 const planeGeometryEditor = requireElement<HTMLTextAreaElement>('#plane-geometry-editor');
 const planeGeometryFeedbackElement = requireElement<HTMLParagraphElement>('#plane-geometry-feedback');
 const planeStatsContainer = requireElement<HTMLDivElement>('#plane-stats-container');
+const runwayConfigContainer = requireElement<HTMLDivElement>('#runway-config-container');
 const canvas = createCanvas();
 const canvasContext = canvas.getContext('2d');
 
@@ -589,8 +593,16 @@ const editablePlaneStats: Record<PlayerSlot, PlaneStats> = {
   right: { ...DEFAULT_PLANE_STATS.right }
 };
 
+const editableRunwayConfig: Record<PlayerSlot, RunwayConfig> = {
+  left:  { ...DEFAULT_RUNWAY_CONFIG.left  },
+  right: { ...DEFAULT_RUNWAY_CONFIG.right }
+};
+
 type StatsInputMap = Record<keyof PlaneStats, HTMLInputElement>;
 const statsInputs: Partial<Record<PlayerSlot, StatsInputMap>> = {};
+
+type RunwayInputMap = Record<keyof RunwayConfig, HTMLInputElement>;
+const runwayInputs: Partial<Record<PlayerSlot, RunwayInputMap>> = {};
 
 const TELEMETRY_ROWS = [
   { key: 'speed',    label: 'Speed'        },
@@ -661,6 +673,16 @@ function sendPlaneStats(slot: PlayerSlot): void {
   }));
 }
 
+function sendRunwayConfig(slot: PlayerSlot): void {
+  if (!socket || socket.readyState !== WebSocket.OPEN) {
+    return;
+  }
+  socket.send(JSON.stringify({
+    type: 'runway_config_update',
+    payload: { slot, config: editableRunwayConfig[slot] }
+  }));
+}
+
 function buildStatsEditor(container: HTMLElement): void {
   const grid = document.createElement('div');
   grid.className = 'stats-editor-grid';
@@ -714,6 +736,59 @@ function buildStatsEditor(container: HTMLElement): void {
   container.append(grid);
 }
 
+function buildRunwayEditor(container: HTMLElement): void {
+  const grid = document.createElement('div');
+  grid.className = 'stats-editor-grid';
+
+  for (const slot of PLAYER_SLOTS) {
+    const column = document.createElement('div');
+    column.className = 'stats-column';
+
+    const heading = document.createElement('div');
+    heading.className = `stats-slot-heading stats-slot-${slot}`;
+    heading.textContent = `${slot === 'left' ? 'Left' : 'Right'} Runway`;
+    column.append(heading);
+
+    const inputs: Partial<RunwayInputMap> = {};
+
+    for (const field of RUNWAY_CONFIG_FIELDS) {
+      const fieldDiv = document.createElement('div');
+      fieldDiv.className = 'stats-field';
+
+      const label = document.createElement('label');
+      label.className = 'stats-field-label';
+      label.textContent = field.label;
+
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.className = 'stats-input';
+      input.step = String(field.step);
+      input.min = String(field.step);
+      input.value = String(DEFAULT_RUNWAY_CONFIG[slot][field.key]);
+
+      input.addEventListener('change', () => {
+        const parsed = parseFloat(input.value);
+        if (Number.isFinite(parsed) && parsed > 0) {
+          editableRunwayConfig[slot] = { ...editableRunwayConfig[slot], [field.key]: parsed };
+          sendRunwayConfig(slot);
+        } else {
+          input.value = String(editableRunwayConfig[slot][field.key]);
+        }
+      });
+
+      label.append(input);
+      fieldDiv.append(label);
+      column.append(fieldDiv);
+      inputs[field.key] = input;
+    }
+
+    runwayInputs[slot] = inputs as RunwayInputMap;
+    grid.append(column);
+  }
+
+  container.append(grid);
+}
+
 // `render()` is the single place that synchronizes DOM controls from app state.
 // Gameplay visuals are rendered continuously by `requestAnimationFrame`, while
 // this UI sync only updates the DOM controls and side panel.
@@ -753,13 +828,22 @@ function render(): void {
 
   for (const slot of PLAYER_SLOTS) {
     const inputMap = statsInputs[slot];
-    if (!inputMap) {
-      continue;
+    if (inputMap) {
+      for (const { key } of PLANE_STATS_FIELDS) {
+        const input = inputMap[key];
+        if (document.activeElement !== input) {
+          input.value = String(editablePlaneStats[slot][key]);
+        }
+      }
     }
-    for (const { key } of PLANE_STATS_FIELDS) {
-      const input = inputMap[key];
-      if (document.activeElement !== input) {
-        input.value = String(editablePlaneStats[slot][key]);
+
+    const runwayMap = runwayInputs[slot];
+    if (runwayMap) {
+      for (const { key } of RUNWAY_CONFIG_FIELDS) {
+        const input = runwayMap[key];
+        if (document.activeElement !== input) {
+          input.value = String(editableRunwayConfig[slot][key]);
+        }
       }
     }
   }
@@ -1731,6 +1815,7 @@ window.addEventListener('beforeunload', () => {
 
 buildTelemetry(planeTelemetryContainer);
 buildStatsEditor(planeStatsContainer);
+buildRunwayEditor(runwayConfigContainer);
 render();
 window.requestAnimationFrame(drawFrame);
 

@@ -1,4 +1,4 @@
-import type { PlaneStats } from './game-config.js';
+import type { PlaneStats, RunwayConfig } from './game-config.js';
 
 // Shared constants, state shapes, and message contracts.
 // Both the browser client and the Node server import this file so that
@@ -96,6 +96,10 @@ export type ClientMessage =
   | {
       type: 'plane_stats_update';
       payload: { slot: PlayerSlot; stats: PlaneStats };
+    }
+  | {
+      type: 'runway_config_update';
+      payload: { slot: PlayerSlot; config: RunwayConfig };
     };
 
 export type ServerMessage =

@@ -17,41 +17,41 @@ export interface PlaneGeometry {
 
 export const PLANE_GEOMETRY: PlaneGeometry = {
     "renderOffsetY": -16,
-    "imagePivot": {"x": 42, "y": 20},
-    "muzzlePoint": {"x": 30, "y": -1},
+    "imagePivot": {"x": 52, "y": 10},
+    "muzzlePoint": {"x": 10, "y": -8},
     "collisionPolygons": [
         [
             {
-                "x": 30,
+                "x": 20,
+                "y": 10
+            },
+            {
+                "x": 10,
                 "y": 0
             },
             {
-                "x": 20,
-                "y": -10
+                "x": -15,
+                "y": 2
             },
             {
-                "x": -5,
-                "y": -8
+                "x": -35,
+                "y": 10
             },
             {
-                "x": -25,
+                "x": -40,
                 "y": 0
             },
             {
-                "x": -30,
-                "y": -10
+                "x": -50,
+                "y": 0
             },
             {
-                "x": -40,
-                "y": -10
+                "x": -50,
+                "y": 20
             },
             {
-                "x": -40,
-                "y": 10
-            },
-            {
-                "x": 20,
-                "y": 10
+                "x": 10,
+                "y": 20
             }
         ]
     ]

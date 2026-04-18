@@ -12,7 +12,7 @@ import {
   type RoomState,
   type ServerErrorCode
 } from '../shared/game.js';
-import { DEFAULT_PLANE_STATS, type PlaneStats } from '../shared/game-config.js';
+import { DEFAULT_PLANE_STATS, DEFAULT_RUNWAY_CONFIG, type PlaneStats, type RunwayConfig } from '../shared/game-config.js';
 
 // RoomRegistry owns all long-lived multiplayer state that is not part of the
 // frame-by-frame flight simulation:
@@ -43,6 +43,8 @@ export interface RoomRecord {
   // Per-slot simulation parameters. Starts from defaults; debug clients can
   // update them live via the plane_stats_update websocket message.
   planeStats: Record<PlayerSlot, PlaneStats>;
+  // Per-slot runway geometry. Debug clients can update via runway_config_update.
+  runwayConfig: Record<PlayerSlot, RunwayConfig>;
 }
 
 export type JoinRoomResult =
@@ -98,6 +100,10 @@ export class RoomRegistry {
       planeStats: {
         left:  { ...DEFAULT_PLANE_STATS.left  },
         right: { ...DEFAULT_PLANE_STATS.right }
+      },
+      runwayConfig: {
+        left:  { ...DEFAULT_RUNWAY_CONFIG.left  },
+        right: { ...DEFAULT_RUNWAY_CONFIG.right }
       }
     };
 
@@ -273,6 +279,13 @@ export class RoomRegistry {
     }
   }
 
+  updateRunwayConfig(roomId: string, slot: PlayerSlot, config: RunwayConfig): void {
+    const room = this.getRoom(roomId);
+    if (room) {
+      room.runwayConfig[slot] = { ...config };
+    }
+  }
+
   cleanupExpiredRooms(): void {
     for (const [roomId, room] of this.rooms.entries()) {
       if (this.isExpired(room)) {
@@ -321,7 +334,7 @@ export class RoomRegistry {
 
     for (const player of room.state.players) {
       player.input = createDefaultInputState();
-      player.plane = createDefaultPlaneState(player.slot);
+      player.plane = createDefaultPlaneState(player.slot, room.runwayConfig[player.slot].spawnX);
     }
   }
 
@@ -339,7 +352,7 @@ export class RoomRegistry {
 
     for (const player of room.state.players) {
       player.input = createDefaultInputState();
-      player.plane = createDefaultPlaneState(player.slot);
+      player.plane = createDefaultPlaneState(player.slot, room.runwayConfig[player.slot].spawnX);
     }
   }
 
