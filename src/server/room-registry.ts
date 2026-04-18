@@ -2,10 +2,13 @@ import { randomBytes } from 'node:crypto';
 import type WebSocket from 'ws';
 
 import {
+  ROOM_ID_ALPHABET,
+  ROOM_ID_LENGTH,
   PLAYER_SLOTS,
   createDefaultInputState,
   createDefaultPlaneState,
   createDefaultPlayerState,
+  normalizeRoomId,
 } from '../shared/game.js';
 import { DEFAULT_PLANE_CONFIG, DEFAULT_RUNWAY_CONFIG } from '../shared/game-config.js';
 import type { CreateRoomResponse, InputState, PlayerSlot, RoomState, ServerErrorCode } from '../types/game.js';
@@ -19,9 +22,6 @@ import type { JoinFailureCode, JoinRoomResult, RoomRecord } from '../types/serve
 // - reconnect reservation for active rounds
 // - rematch voting and round resets
 // Type definitions (RoomRecord, JoinRoomResult) live in src/types/server.ts.
-const ROOM_ID_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-const ROOM_ID_LENGTH = 6;
-const ROOM_ID_PATTERN = new RegExp(`^[${ROOM_ID_ALPHABET}]{${ROOM_ID_LENGTH}}$`);
 const DEFAULT_ROOM_TTL_MS = 15 * 60 * 1000;
 const ACTIVE_RECONNECT_GRACE_MS = 3_000;
 
@@ -385,21 +385,6 @@ export class RoomRegistry {
       this.clearDisconnectTimer(room, slot);
     }
   }
-}
-
-// Room ids are user-facing, so normalization is centralized here and reused by
-// HTTP and websocket entry points.
-export function normalizeRoomId(roomId: string | null | undefined): string | null {
-  if (!roomId) {
-    return null;
-  }
-
-  const normalizedRoomId = roomId.trim().toUpperCase();
-  if (!ROOM_ID_PATTERN.test(normalizedRoomId)) {
-    return null;
-  }
-
-  return normalizedRoomId;
 }
 
 // Human-shareable room ids intentionally avoid ambiguous characters.

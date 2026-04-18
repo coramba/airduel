@@ -6,10 +6,13 @@ import type { PlayerSlot, InputState, PlaneState, PlayerState } from '../types/g
 export const GAME_WIDTH = 960;
 export const GAME_HEIGHT = 648;
 export const GROUND_HEIGHT = 72;
-export const RUNWAY_HEIGHT = 0;
+export const RUNWAY_HEIGHT = 14;
 export const RUNWAY_PLANE_Y = GAME_HEIGHT - GROUND_HEIGHT - RUNWAY_HEIGHT / 2;
 export const PLANE_WRAP_MARGIN = 24;
 export const BULLET_WRAP_MARGIN = 80;
+export const ROOM_ID_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+export const ROOM_ID_LENGTH = 6;
+const ROOM_ID_PATTERN = new RegExp(`^[${ROOM_ID_ALPHABET}]{${ROOM_ID_LENGTH}}$`);
 
 export const PLAYER_SLOTS = ['left', 'right'] as const;
 
@@ -65,4 +68,13 @@ export function isInputState(value: unknown): value is InputState {
     typeof candidate.pitchDownPressed === 'boolean' &&
     typeof candidate.firePressed === 'boolean'
   );
+}
+
+export function normalizeRoomId(roomId: string | null | undefined): string | null {
+  if (!roomId) {
+    return null;
+  }
+
+  const normalizedRoomId = roomId.trim().toUpperCase();
+  return ROOM_ID_PATTERN.test(normalizedRoomId) ? normalizedRoomId : null;
 }

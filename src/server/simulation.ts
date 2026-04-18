@@ -16,7 +16,7 @@ import {
   transformPlanePoint,
   transformPlanePolygon,
 } from '../shared/plane-shape.js';
-import { EXPLOSION_CONFIG } from '../shared/game-config.js';
+import { EXPLOSION_CONFIG, getEffectiveTurnRate } from '../shared/game-config.js';
 import type { BulletState, InputState, PlaneState, PlayerSlot, RoundOutcome } from '../types/game.js';
 import type { PlaneStats, RunwayConfig } from '../types/config.js';
 import type { PlanePoint } from '../types/geometry.js';
@@ -339,9 +339,7 @@ function updateAirbornePlane(
 
   // Turn authority scales from 0 (at airSpeed/2) to full turnRate (at airSpeed).
   // The exact value is locked in once newSpeed clamps to airSpeed to avoid drift.
-  const effectiveTurnRate = newSpeed >= stats.airSpeed
-    ? stats.turnRate
-    : stats.turnRate * Math.max(0, (newSpeed - stats.airSpeed / 2) / (stats.airSpeed / 2));
+  const effectiveTurnRate = getEffectiveTurnRate(newSpeed, stats);
 
   const pitchIntent = (input.pitchUpPressed ? 1 : 0) - (input.pitchDownPressed ? 1 : 0);
   plane.angle = normalizeAngle(

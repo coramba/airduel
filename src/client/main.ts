@@ -5,9 +5,11 @@ import {
   GROUND_HEIGHT,
   PLAYER_SLOTS,
   PLANE_WRAP_MARGIN,
+  ROOM_ID_LENGTH,
   RUNWAY_HEIGHT,
   RUNWAY_PLANE_Y,
   createDefaultInputState,
+  normalizeRoomId,
 } from '../shared/game.js';
 import {
   PLANE_GEOMETRY,
@@ -18,6 +20,7 @@ import {
   DEFAULT_RUNWAY_CONFIG,
   EXPLOSION_CONFIG,
   FLAG_CONFIG,
+  getEffectiveTurnRate,
   HORIZON_CONFIG,
   PLANE_STATS_FIELDS,
   RUNWAY_CONFIG_FIELDS,
@@ -229,18 +232,16 @@ function drawClouds(context: CanvasRenderingContext2D, foreground: boolean): voi
 // Runways are drawn separately from the simulation so the shared geometry stays
 // visually obvious during waiting and active phases.
 function drawRunways(context: CanvasRenderingContext2D): void {
-  const runwayY = GAME_HEIGHT - GROUND_HEIGHT - RUNWAY_HEIGHT;
-
   for (const slot of PLAYER_SLOTS) {
-    const { startX, length, buildingOffsetX, buildingOffsetY } = editableRunwayConfig[slot];
+    const { startX, startY, length, buildingOffsetX, buildingOffsetY } = editableRunwayConfig[slot];
     const x = slot === 'left' ? startX : startX - length;
 
     context.fillStyle = '#6d5a4d';
-    context.fillRect(x, runwayY, length, 14);
+    context.fillRect(x, startY, length, RUNWAY_HEIGHT);
 
     context.fillStyle = 'rgba(255, 255, 255, 0.6)';
     for (let mark = x + 12; mark + 10 <= x + length; mark += 22) {
-      context.fillRect(mark, runwayY + 5, 10, 4);
+      context.fillRect(mark, startY + 5, 10, 4);
     }
 
     const img = BUILDING_IMAGES[slot];
@@ -248,7 +249,7 @@ function drawRunways(context: CanvasRenderingContext2D): void {
       const bx = slot === 'left'
         ? startX + buildingOffsetX
         : startX - img.naturalWidth + buildingOffsetX;
-      const by = GAME_HEIGHT - GROUND_HEIGHT - img.naturalHeight + buildingOffsetY;
+      const by = startY - img.naturalHeight + buildingOffsetY;
       context.drawImage(img, bx, by);
     }
   }
@@ -706,9 +707,7 @@ function updateTelemetry(): void {
   const { plane } = player;
   const stats = editablePlaneStats[slot];
   const speed = Math.hypot(plane.velocity.x, plane.velocity.y);
-  const effectiveTurnRate = speed >= stats.airSpeed
-    ? stats.turnRate
-    : stats.turnRate * Math.max(0, (speed - stats.airSpeed / 2) / (stats.airSpeed / 2));
+  const effectiveTurnRate = getEffectiveTurnRate(speed, stats);
 
   telemetrySpans.speed.textContent    = `${speed.toFixed(1)} px/s`;
   telemetrySpans.turnRate.textContent = `${effectiveTurnRate.toFixed(2)} rad/s`;
@@ -1172,7 +1171,11 @@ function getVisibleFeedback(): string {
       : 'Waiting for the second player to confirm the rematch.';
   }
 
-  return state.feedback === 'Waiting for the second pilot to join.' ? '' : state.feedback;
+  if (state.roomState?.status === 'waiting') {
+    return '';
+  }
+
+  return state.feedback;
 }
 
 // Room cards are mounted once and then updated in place to avoid unnecessary DOM
@@ -1300,14 +1303,14 @@ function extractRoomId(value: string): string | null {
     return null;
   }
 
-  if (/^[A-Z2-9]{6}$/i.test(trimmedValue)) {
-    return trimmedValue.toUpperCase();
+  const directRoomId = normalizeRoomId(trimmedValue);
+  if (directRoomId) {
+    return directRoomId;
   }
 
   try {
     const url = new URL(trimmedValue, window.location.origin);
-    const queryRoomId = url.searchParams.get('room');
-    return queryRoomId && /^[A-Z2-9]{6}$/i.test(queryRoomId) ? queryRoomId.toUpperCase() : null;
+    return normalizeRoomId(url.searchParams.get('room'));
   } catch {
     return null;
   }
@@ -1835,7 +1838,7 @@ setupForm.addEventListener('submit', (event) => {
 
   const roomId = extractRoomId(joinRoomInput.value);
   if (!roomId) {
-    resetRoomView('Enter a six-character room id or a link containing ?room=.');
+    resetRoomView(`Enter a ${ROOM_ID_LENGTH}-character room id or a link containing ?room=.`);
     state.setupPanelMode = 'join';
     render();
     return;

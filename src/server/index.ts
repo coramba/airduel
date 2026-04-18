@@ -7,12 +7,13 @@ import WebSocket, { WebSocketServer, type RawData } from 'ws';
 
 import {
   isInputState,
+  normalizeRoomId,
   PLAYER_SLOTS,
 } from '../shared/game.js';
 import { isPlaneStats, isRunwayConfig } from '../shared/game-config.js';
 import type { ClientMessage, ServerErrorCode, ServerMessage } from '../types/game.js';
 import type { RequestLike } from '../types/server.js';
-import { normalizeRoomId, RoomRegistry } from './room-registry.js';
+import { RoomRegistry } from './room-registry.js';
 import { SIMULATION_TICK_MS, stepRoom } from './simulation.js';
 
 // HTTP + WebSocket entry point.
@@ -316,4 +317,3 @@ function getRoomErrorMessage(code: ServerErrorCode): string {
       return 'Message must be valid JSON.';
   }
 }
-

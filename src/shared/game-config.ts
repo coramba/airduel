@@ -1,5 +1,6 @@
 // Shared gameplay configuration: asset names, defaults, field descriptors, and validators.
 // Type definitions (PlaneStats, RunwayConfig, …) live in src/types/config.ts.
+import { GAME_HEIGHT, GROUND_HEIGHT, RUNWAY_HEIGHT } from './game.js';
 import type { PlayerSlot } from '../types/game.js';
 import type { PlaneStats, PlaneStatsField, RunwayConfig, RunwayConfigField } from '../types/config.js';
 
@@ -27,21 +28,30 @@ export const HORIZON_CONFIG = {
 
 export const RUNWAY_CONFIG_FIELDS: readonly RunwayConfigField[] = [
   { key: 'startX',          label: 'Runway start X (px)',    step: 5 },
+  { key: 'startY',          label: 'Runway start Y (px)',    step: 5 },
   { key: 'length',          label: 'Runway length (px)',     step: 5 },
   { key: 'spawnX',          label: 'Spawn X (px)',           step: 5 },
   { key: 'buildingOffsetX', label: 'Building offset X (px)', step: 1 },
   { key: 'buildingOffsetY', label: 'Building offset Y (px)', step: 1 },
 ];
 
+const DEFAULT_RUNWAY_START_Y = GAME_HEIGHT - GROUND_HEIGHT - RUNWAY_HEIGHT + 12;
+
 export const DEFAULT_RUNWAY_CONFIG: Record<PlayerSlot, RunwayConfig> = {
   left: {
-    startX: 5, length: 240, spawnX: 60,
+    startX: 5,
+    startY: DEFAULT_RUNWAY_START_Y,
+    length: 240,
+    spawnX: 60,
     buildingImage: 'buildings_l.png',
     buildingOffsetX: 80,
     buildingOffsetY: 0,
   },
   right: {
-    startX: 955, length: 240, spawnX: 900,
+    startX: 955,
+    startY: DEFAULT_RUNWAY_START_Y,
+    length: 240,
+    spawnX: 900,
     buildingImage: 'buildings_r.png',
     buildingOffsetX: -80,
     buildingOffsetY: 0,
@@ -55,6 +65,7 @@ export function isRunwayConfig(value: unknown): value is RunwayConfig {
   const c = value as Record<string, unknown>;
   return (
     typeof c.startX          === 'number' && c.startX > 0 &&
+    typeof c.startY          === 'number' && c.startY > 0 &&
     typeof c.length          === 'number' && c.length > 0 &&
     typeof c.spawnX          === 'number' && c.spawnX > 0 &&
     typeof c.buildingImage   === 'string' && c.buildingImage.length > 0 &&
@@ -127,4 +138,12 @@ export function isPlaneStats(value: unknown): value is PlaneStats {
     typeof s.bulletRadius        === 'number' && s.bulletRadius        > 0 &&
     typeof s.fireCooldownMs      === 'number' && s.fireCooldownMs      > 0
   );
+}
+
+export function getEffectiveTurnRate(speed: number, stats: PlaneStats): number {
+  if (speed >= stats.airSpeed) {
+    return stats.turnRate;
+  }
+
+  return stats.turnRate * Math.max(0, (speed - stats.airSpeed / 2) / (stats.airSpeed / 2));
 }

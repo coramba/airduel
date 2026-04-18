@@ -6,18 +6,18 @@ import type { PlaneGeometry, PlanePoint } from '../types/geometry.js';
 
 export const PLANE_GEOMETRY: PlaneGeometry = {
     "renderOffsetY": -16,
-    "imagePivot": {"x": 52, "y": 10},
+    "imagePivot": {"x": 52, "y": 6},
     "muzzlePoint": {"x": 10, "y": 10},
     "collisionPolygons": [
         [
-            { "x": 20,  "y": 10 },
-            { "x": 10,  "y": 0  },
-            { "x": -15, "y": 2  },
-            { "x": -35, "y": 10 },
-            { "x": -40, "y": 0  },
-            { "x": -50, "y": 0  },
-            { "x": -50, "y": 20 },
-            { "x": 10,  "y": 20 }
+            { "x": 20,  "y": 12 },
+            { "x": 10,  "y": 2  },
+            { "x": -15, "y": 3  },
+            { "x": -35, "y": 12 },
+            { "x": -40, "y": 2  },
+            { "x": -50, "y": 2  },
+            { "x": -50, "y": 22 },
+            { "x": 10,  "y": 22 }
         ]
     ]
 };
