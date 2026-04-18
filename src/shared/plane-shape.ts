@@ -18,7 +18,7 @@ export interface PlaneGeometry {
 export const PLANE_GEOMETRY: PlaneGeometry = {
     "renderOffsetY": -16,
     "imagePivot": {"x": 52, "y": 10},
-    "muzzlePoint": {"x": 10, "y": -8},
+    "muzzlePoint": {"x": 10, "y": 10},
     "collisionPolygons": [
         [
             {

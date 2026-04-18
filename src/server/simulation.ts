@@ -132,7 +132,7 @@ export function stepRoom(room: RoomRecord): boolean {
         continue;
       }
 
-      if (doesBulletHitPlane(bullet, player.plane)) {
+      if (doesBulletHitPlane(bullet, player.slot, player.plane)) {
         destroyedSlots.add(player.slot);
         hit = true;
       }
@@ -327,7 +327,13 @@ function maybeCreateBullet(
 
   plane.shotCooldownMs = stats.fireCooldownMs;
   const planeOrigin = getPlaneShapeOrigin(plane.position);
-  const muzzlePosition = transformPlanePoint(PLANE_GEOMETRY.muzzlePoint, planeOrigin, plane.angle);
+  // The right plane is rendered with scale(-1,1) + rotate(π - angle). Use the
+  // same mirrored-space transform here so the bullet origin matches the visual nose.
+  const muzzleLocal = slot === 'right'
+    ? { x: -PLANE_GEOMETRY.muzzlePoint.x, y: PLANE_GEOMETRY.muzzlePoint.y }
+    : PLANE_GEOMETRY.muzzlePoint;
+  const muzzleAngle = slot === 'right' ? plane.angle - Math.PI : plane.angle;
+  const muzzlePosition = transformPlanePoint(muzzleLocal, planeOrigin, muzzleAngle);
 
   return {
     id: `${slot}-${nextBulletId++}`,
@@ -449,11 +455,11 @@ function didPlanesCollide(players: RoomRecord['state']['players']): boolean {
     return false;
   }
 
-  const leftPolygons = getPlaneCollisionPolygons(leftPlayer.plane);
+  const leftPolygons = getPlaneCollisionPolygons('left', leftPlayer.plane);
   const loopWidth = GAME_WIDTH + PLANE_WRAP_MARGIN * 2;
 
   for (const xOffset of [0, -loopWidth, loopWidth]) {
-    const rightPolygons = getPlaneCollisionPolygons(rightPlayer.plane, xOffset);
+    const rightPolygons = getPlaneCollisionPolygons('right', rightPlayer.plane, xOffset);
     if (doCollisionPolygonSetsIntersect(leftPolygons, rightPolygons)) {
       return true;
     }
@@ -467,6 +473,7 @@ function canPlaneCollide(plane: PlaneState): boolean {
 }
 
 function getPlaneCollisionPolygons(
+  slot: PlayerSlot,
   plane: PlaneState,
   xOffset = 0
 ): PlanePoint[][] {
@@ -474,6 +481,17 @@ function getPlaneCollisionPolygons(
     x: plane.position.x + xOffset,
     y: plane.position.y
   });
+
+  if (slot === 'right') {
+    const angle = plane.angle - Math.PI;
+    return PLANE_GEOMETRY.collisionPolygons.map((polygon) =>
+      transformPlanePolygon(
+        polygon.map((p) => ({ x: -p.x, y: p.y })),
+        origin,
+        angle
+      )
+    );
+  }
 
   return PLANE_GEOMETRY.collisionPolygons.map((polygon) =>
     transformPlanePolygon(polygon, origin, plane.angle)
@@ -495,8 +513,8 @@ function doCollisionPolygonSetsIntersect(
   return false;
 }
 
-function doesBulletHitPlane(bullet: BulletState, plane: PlaneState): boolean {
-  const collisionPolygons = getPlaneCollisionPolygons(plane);
+function doesBulletHitPlane(bullet: BulletState, slot: PlayerSlot, plane: PlaneState): boolean {
+  const collisionPolygons = getPlaneCollisionPolygons(slot, plane);
   return collisionPolygons.some((polygon) =>
     doesCircleIntersectPolygon(bullet.position, bullet.radius, polygon)
   );

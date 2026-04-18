@@ -73,8 +73,8 @@ export const PLANE_STATS_FIELDS: readonly PlaneStatsField[] = [
 
 export const DEFAULT_PLANE_STATS: Record<PlayerSlot, PlaneStats> = {
   left: {
-    airSpeed:             240,
-    acceleration:         70,
+    airSpeed:             280,
+    acceleration:         80,
     turnRate:             2.5,
     stallThreshold:       70,
     diveExitDistance:     300,
@@ -86,8 +86,8 @@ export const DEFAULT_PLANE_STATS: Record<PlayerSlot, PlaneStats> = {
     fireCooldownMs:       250
   },
   right: {
-    airSpeed:             210,
-    acceleration:         70,
+    airSpeed:             250,
+    acceleration:         80,
     turnRate:             1.8,
     stallThreshold:       70,
     diveExitDistance:     300,
