@@ -55,6 +55,20 @@ export function stepRoom(room: RoomRecord): boolean {
       const stats = room.planeStats[player.slot];
       player.plane.shotCooldownMs = Math.max(0, player.plane.shotCooldownMs - SIMULATION_TICK_MS);
       updateAlivePlane(player.slot, player.plane, player.input, stats);
+      // Apply ground collisions so the winner can't fly through the ground.
+      // Use a local set — crashes here must not alter the already-locked outcome.
+      const phase = player.plane.phase;
+      if ((phase === 'airborne' || phase === 'stall') &&
+          player.plane.velocity.y >= 0 &&
+          lowestCollisionY(player.slot, player.plane) >= runwayImpactY) {
+        const localDestroyed = new Set<PlayerSlot>();
+        resolveGroundContact(player.slot, player.plane, stats, localDestroyed);
+        if (localDestroyed.has(player.slot)) {
+          player.plane.phase = 'destroyed';
+          player.plane.velocity.x = 0;
+          player.plane.velocity.y = 0;
+        }
+      }
     }
     if (room.state.explosionRemainingMs === 0) {
       finalizeRound(room);
@@ -161,6 +175,7 @@ export function stepRoom(room: RoomRecord): boolean {
     }
     room.state.bullets = [];
     room.state.explosionRemainingMs = EXPLOSION_CONFIG.durationMs;
+    room.pendingOutcome = resolveOutcome(destroyedSlots);
     room.state.lastActivityAt = Date.now();
     return true;
   }
@@ -392,10 +407,10 @@ function isBulletExpired(bullet: BulletState): boolean {
 }
 
 function finalizeRound(room: RoomRecord): void {
-  const destroyedSlots = new Set(
-    room.state.players.filter((p) => p.plane.phase === 'destroyed').map((p) => p.slot)
+  const outcome = room.pendingOutcome ?? resolveOutcome(
+    new Set(room.state.players.filter((p) => p.plane.phase === 'destroyed').map((p) => p.slot))
   );
-  const outcome = resolveOutcome(destroyedSlots);
+  delete room.pendingOutcome;
   room.state.status = 'round_over';
   room.state.winner = outcome;
   room.state.message =

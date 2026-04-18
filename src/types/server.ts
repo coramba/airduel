@@ -1,6 +1,6 @@
 import type WebSocket from 'ws';
 
-import type { PlayerSlot, RoomState, ServerErrorCode } from './game.js';
+import type { PlayerSlot, RoomState, RoundOutcome, ServerErrorCode } from './game.js';
 import type { PlaneStats, RunwayConfig } from './config.js';
 
 export type JoinFailureCode = Extract<
@@ -15,6 +15,9 @@ export interface RoomRecord {
   reconnectTokens: Record<PlayerSlot, string>;
   planeStats: Record<PlayerSlot, PlaneStats>;
   runwayConfig: Record<PlayerSlot, RunwayConfig>;
+  // Locked in when the explosion countdown begins so a winner crashing during
+  // the animation does not corrupt the round outcome in finalizeRound.
+  pendingOutcome?: RoundOutcome;
 }
 
 export type JoinRoomResult =

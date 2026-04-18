@@ -7,9 +7,9 @@ export const FLAG_CONFIG = {
   imageNeutral: 'flag_n.png',
   imageLeft:    'flag_l.png',
   imageRight:   'flag_r.png',
-  x:       409,
+  x:       430,
   offsetX:  46,
-  offsetY:   5,
+  offsetY:   13,
 };
 
 export const EXPLOSION_CONFIG = {
