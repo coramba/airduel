@@ -1,11 +1,24 @@
 import type { PlayerSlot } from './game.js';
 
-export const EXPLOSION_DURATION_MS = 1500;
+export const EXPLOSION_CONFIG = {
+  image: 'airexplosion1.gif',
+  durationMs: 1500,
+  growMs: 300,
+  shrinkMs: 400,
+};
+export const HORIZON_CONFIG = {
+  image: 'horizon2.png',
+  offsetY: 7,
+  alpha: 0.6,
+};
 
 export interface RunwayConfig {
   startX: number;
   length: number;
   spawnX: number;
+  buildingImage: string;
+  buildingOffsetX: number;
+  buildingOffsetY: number;
 }
 
 export interface RunwayConfigField {
@@ -15,14 +28,26 @@ export interface RunwayConfigField {
 }
 
 export const RUNWAY_CONFIG_FIELDS: readonly RunwayConfigField[] = [
-  { key: 'startX', label: 'Runway start X (px)', step: 5 },
-  { key: 'length', label: 'Runway length (px)',   step: 5 },
-  { key: 'spawnX', label: 'Spawn X (px)',         step: 5 },
+  { key: 'startX',          label: 'Runway start X (px)',   step: 5 },
+  { key: 'length',          label: 'Runway length (px)',    step: 5 },
+  { key: 'spawnX',          label: 'Spawn X (px)',          step: 5 },
+  { key: 'buildingOffsetX', label: 'Building offset X (px)', step: 1 },
+  { key: 'buildingOffsetY', label: 'Building offset Y (px)', step: 1 },
 ];
 
 export const DEFAULT_RUNWAY_CONFIG: Record<PlayerSlot, RunwayConfig> = {
-  left:  { startX: 5,  length: 240, spawnX: 60  },
-  right: { startX: 955, length: 240, spawnX: 900 },
+  left: {
+    startX: 5, length: 240, spawnX: 60,
+    buildingImage: 'buildings_l.png',
+    buildingOffsetX: 80,
+    buildingOffsetY: 0,
+  },
+  right: {
+    startX: 955, length: 240, spawnX: 900,
+    buildingImage: 'buildings_r.png',
+    buildingOffsetX: -80,
+    buildingOffsetY: 0,
+  },
 };
 
 export function isRunwayConfig(value: unknown): value is RunwayConfig {
@@ -31,13 +56,17 @@ export function isRunwayConfig(value: unknown): value is RunwayConfig {
   }
   const c = value as Record<string, unknown>;
   return (
-    typeof c.startX === 'number' && c.startX > 0 &&
-    typeof c.length === 'number' && c.length > 0 &&
-    typeof c.spawnX === 'number' && c.spawnX > 0
+    typeof c.startX          === 'number' && c.startX > 0 &&
+    typeof c.length          === 'number' && c.length > 0 &&
+    typeof c.spawnX          === 'number' && c.spawnX > 0 &&
+    typeof c.buildingImage   === 'string' && c.buildingImage.length > 0 &&
+    typeof c.buildingOffsetX === 'number' &&
+    typeof c.buildingOffsetY === 'number'
   );
 }
 
 export interface PlaneStats {
+  planeImage: string;
   airSpeed: number;
   acceleration: number;
   turnRate: number;
@@ -71,8 +100,9 @@ export const PLANE_STATS_FIELDS: readonly PlaneStatsField[] = [
   { key: 'fireCooldownMs',      label: 'Fire cooldown (ms)',   step: 10  },
 ];
 
-export const DEFAULT_PLANE_STATS: Record<PlayerSlot, PlaneStats> = {
+export const DEFAULT_PLANE_CONFIG: Record<PlayerSlot, PlaneStats> = {
   left: {
+    planeImage: 'plane2.png',
     airSpeed:             280,
     acceleration:         80,
     turnRate:             2.5,
@@ -86,6 +116,7 @@ export const DEFAULT_PLANE_STATS: Record<PlayerSlot, PlaneStats> = {
     fireCooldownMs:       250
   },
   right: {
+    planeImage: 'plane1.png',
     airSpeed:             250,
     acceleration:         80,
     turnRate:             1.8,
@@ -106,6 +137,7 @@ export function isPlaneStats(value: unknown): value is PlaneStats {
   }
   const s = value as Record<string, unknown>;
   return (
+    typeof s.planeImage          === 'string' && s.planeImage.length   > 0 &&
     typeof s.airSpeed            === 'number' && s.airSpeed            > 0 &&
     typeof s.acceleration        === 'number' && s.acceleration        > 0 &&
     typeof s.turnRate            === 'number' && s.turnRate            > 0 &&

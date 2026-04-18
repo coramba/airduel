@@ -22,7 +22,7 @@ import {
   transformPlanePolygon,
   type PlanePoint
 } from '../shared/plane-shape.js';
-import { EXPLOSION_DURATION_MS, type PlaneStats, type RunwayConfig } from '../shared/game-config.js';
+import { EXPLOSION_CONFIG, type PlaneStats, type RunwayConfig } from '../shared/game-config.js';
 import type { RoomRecord } from './room-registry.js';
 
 // Authoritative round simulation.
@@ -162,7 +162,7 @@ export function stepRoom(room: RoomRecord): boolean {
       }
     }
     room.state.bullets = [];
-    room.state.explosionRemainingMs = EXPLOSION_DURATION_MS;
+    room.state.explosionRemainingMs = EXPLOSION_CONFIG.durationMs;
     room.state.lastActivityAt = Date.now();
     return true;
   }

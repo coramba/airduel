@@ -25,9 +25,10 @@ import {
   type PlanePoint
 } from '../shared/plane-shape.js';
 import {
-  DEFAULT_PLANE_STATS,
+  DEFAULT_PLANE_CONFIG,
   DEFAULT_RUNWAY_CONFIG,
-  EXPLOSION_DURATION_MS,
+  EXPLOSION_CONFIG,
+  HORIZON_CONFIG,
   PLANE_STATS_FIELDS,
   RUNWAY_CONFIG_FIELDS,
   type PlaneStats,
@@ -81,11 +82,16 @@ function loadImage(src: string): HTMLImageElement {
 }
 
 const PLANE_IMAGES: Record<PlayerSlot, HTMLImageElement> = {
-  left: loadImage('/images/plane2.png'),
-  right: loadImage('/images/plane1.png')
+  left:  loadImage(`/images/${DEFAULT_PLANE_CONFIG.left.planeImage}`),
+  right: loadImage(`/images/${DEFAULT_PLANE_CONFIG.right.planeImage}`),
 };
 
-const horizonImage = loadImage('/images/horizon2.png');
+const BUILDING_IMAGES: Record<PlayerSlot, HTMLImageElement> = {
+  left:  loadImage(`/images/${DEFAULT_RUNWAY_CONFIG.left.buildingImage}`),
+  right: loadImage(`/images/${DEFAULT_RUNWAY_CONFIG.right.buildingImage}`),
+};
+
+const horizonImage = loadImage(`/images/${HORIZON_CONFIG.image}`);
 
 interface CloudPuff { dx: number; dy: number; r: number; }
 interface Cloud { x: number; y: number; puffs: CloudPuff[]; foreground: boolean; }
@@ -123,8 +129,6 @@ function generateClouds(): Cloud[] {
 
 const CLOUDS = generateClouds();
 
-const EXPLOSION_GROW_MS = 300;
-const EXPLOSION_SHRINK_MS = 400;
 
 const PLANE_GRID_EXTENT = 100;
 const PLANE_GRID_STEP = 10;
@@ -213,8 +217,8 @@ function drawBackground(context: CanvasRenderingContext2D): void {
 
   if (horizonImage.complete && horizonImage.naturalWidth > 0) {
     const imgH = horizonImage.naturalHeight;
-    const y = GAME_HEIGHT - GROUND_HEIGHT - imgH + 7;
-    context.globalAlpha = 0.6;
+    const y = GAME_HEIGHT - GROUND_HEIGHT - imgH + HORIZON_CONFIG.offsetY;
+    context.globalAlpha = HORIZON_CONFIG.alpha;
     for (let x = 0; x < GAME_WIDTH; x += horizonImage.naturalWidth) {
       context.drawImage(horizonImage, x, y);
     }
@@ -245,7 +249,7 @@ function drawRunways(context: CanvasRenderingContext2D): void {
   const runwayY = GAME_HEIGHT - GROUND_HEIGHT - RUNWAY_HEIGHT;
 
   for (const slot of PLAYER_SLOTS) {
-    const { startX, length } = editableRunwayConfig[slot];
+    const { startX, length, buildingOffsetX, buildingOffsetY } = editableRunwayConfig[slot];
     const x = slot === 'left' ? startX : startX - length;
 
     context.fillStyle = '#6d5a4d';
@@ -254,6 +258,15 @@ function drawRunways(context: CanvasRenderingContext2D): void {
     context.fillStyle = 'rgba(255, 255, 255, 0.6)';
     for (let mark = x + 12; mark + 10 <= x + length; mark += 22) {
       context.fillRect(mark, runwayY + 5, 10, 4);
+    }
+
+    const img = BUILDING_IMAGES[slot];
+    if (img.complete && img.naturalWidth > 0) {
+      const bx = slot === 'left'
+        ? startX + buildingOffsetX
+        : startX - img.naturalWidth + buildingOffsetX;
+      const by = GAME_HEIGHT - GROUND_HEIGHT - img.naturalHeight + buildingOffsetY;
+      context.drawImage(img, bx, by);
     }
   }
 }
@@ -449,17 +462,15 @@ function drawCollisionOverlay(context: CanvasRenderingContext2D): void {
 }
 
 function getExplosionScale(elapsedMs: number): number {
-  const GROW_MS = 300;
-  const SHRINK_MS = 400;
-  if (elapsedMs < GROW_MS) {
-    return 0.25 + 0.75 * (elapsedMs / GROW_MS);
+  if (elapsedMs < EXPLOSION_CONFIG.growMs) {
+    return 0.25 + 0.75 * (elapsedMs / EXPLOSION_CONFIG.growMs);
   }
-  const shrinkStart = EXPLOSION_DURATION_MS - SHRINK_MS;
+  const shrinkStart = EXPLOSION_CONFIG.durationMs - EXPLOSION_CONFIG.shrinkMs;
   if (elapsedMs < shrinkStart) {
     return 1.0;
   }
-  if (elapsedMs < EXPLOSION_DURATION_MS) {
-    return 1.0 - 0.75 * ((elapsedMs - shrinkStart) / SHRINK_MS);
+  if (elapsedMs < EXPLOSION_CONFIG.durationMs) {
+    return 1.0 - 0.75 * ((elapsedMs - shrinkStart) / EXPLOSION_CONFIG.shrinkMs);
   }
   return 0;
 }
@@ -470,7 +481,7 @@ function showExplosionSprite(slot: PlayerSlot, gameX: number, gameY: number): vo
   sprite.style.top = `${(gameY / GAME_HEIGHT) * 100}%`;
   sprite.style.display = 'block';
   // Force the GIF to restart from frame 0 by re-assigning src.
-  sprite.src = '/images/airexplosion1.gif';
+  sprite.src = `/images/${EXPLOSION_CONFIG.image}`;
 }
 
 function hideExplosionSprite(slot: PlayerSlot): void {
@@ -587,7 +598,7 @@ canvasRoot.replaceChildren(canvas);
 
 function createExplosionSprite(): HTMLImageElement {
   const img = new Image();
-  img.src = '/images/airexplosion1.gif';
+  img.src = `/images/${EXPLOSION_CONFIG.image}`;
   img.className = 'explosion-sprite';
   canvasRoot.appendChild(img);
   return img;
@@ -629,8 +640,8 @@ let currentRoomSnapshot: RoomSnapshot | null = null;
 const explosionStartTimes = new Map<PlayerSlot, number>();
 
 const editablePlaneStats: Record<PlayerSlot, PlaneStats> = {
-  left:  { ...DEFAULT_PLANE_STATS.left  },
-  right: { ...DEFAULT_PLANE_STATS.right }
+  left:  { ...DEFAULT_PLANE_CONFIG.left  },
+  right: { ...DEFAULT_PLANE_CONFIG.right }
 };
 
 const editableRunwayConfig: Record<PlayerSlot, RunwayConfig> = {
@@ -751,7 +762,7 @@ function buildStatsEditor(container: HTMLElement): void {
       input.className = 'stats-input';
       input.step = String(field.step);
       input.min = String(field.step);
-      input.value = String(DEFAULT_PLANE_STATS[slot][field.key]);
+      input.value = String(DEFAULT_PLANE_CONFIG[slot][field.key]);
 
       input.addEventListener('change', () => {
         const parsed = parseFloat(input.value);

@@ -12,7 +12,7 @@ import {
   type RoomState,
   type ServerErrorCode
 } from '../shared/game.js';
-import { DEFAULT_PLANE_STATS, DEFAULT_RUNWAY_CONFIG, type PlaneStats, type RunwayConfig } from '../shared/game-config.js';
+import { DEFAULT_PLANE_CONFIG, DEFAULT_RUNWAY_CONFIG, type PlaneStats, type RunwayConfig } from '../shared/game-config.js';
 
 // RoomRegistry owns all long-lived multiplayer state that is not part of the
 // frame-by-frame flight simulation:
@@ -98,8 +98,8 @@ export class RoomRegistry {
         right: createReconnectToken()
       },
       planeStats: {
-        left:  { ...DEFAULT_PLANE_STATS.left  },
-        right: { ...DEFAULT_PLANE_STATS.right }
+        left:  { ...DEFAULT_PLANE_CONFIG.left  },
+        right: { ...DEFAULT_PLANE_CONFIG.right }
       },
       runwayConfig: {
         left:  { ...DEFAULT_RUNWAY_CONFIG.left  },
