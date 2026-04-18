@@ -1,5 +1,5 @@
 import type { PlayerSlot, RoomState } from './game.js';
-import type { PlaneStats, RunwayConfig } from './config.js';
+import type { PlaneStatsField, RunwayConfigField } from './config.js';
 
 export type ConnectionPhase = 'idle' | 'creating' | 'connecting' | 'connected' | 'error';
 export type SetupPanelMode = 'hidden' | 'share' | 'join';
@@ -42,5 +42,5 @@ export interface Cloud {
   foreground: boolean;
 }
 
-export type StatsInputMap = Record<keyof PlaneStats, HTMLInputElement>;
-export type RunwayInputMap = Record<keyof RunwayConfig, HTMLInputElement>;
+export type StatsInputMap = Record<PlaneStatsField['key'], HTMLInputElement>;
+export type RunwayInputMap = Record<RunwayConfigField['key'], HTMLInputElement>;

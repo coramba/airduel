@@ -1,4 +1,4 @@
-import type { PlaneStats, RunwayConfig } from './config.js';
+import type { CloudConfig, PlaneStats, RunwayConfig } from './config.js';
 
 export type PlayerSlot = 'left' | 'right';
 export type RoomStatus = 'waiting' | 'active' | 'round_over';
@@ -50,10 +50,15 @@ export interface PlayerState {
   plane: PlaneState;
 }
 
+export interface RoundSettings {
+  clouds: CloudConfig;
+}
+
 export interface RoomState {
   id: string;
   status: RoomStatus;
   round: number;
+  roundSettings: RoundSettings;
   message: string | null;
   players: PlayerState[];
   bullets: BulletState[];

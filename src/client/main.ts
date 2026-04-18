@@ -16,6 +16,7 @@ import {
   getPlaneShapeOrigin,
 } from '../shared/plane-shape.js';
 import {
+  CLOUD_CONFIG,
   DEFAULT_PLANE_CONFIG,
   DEFAULT_RUNWAY_CONFIG,
   EXPLOSION_CONFIG,
@@ -26,7 +27,7 @@ import {
   RUNWAY_CONFIG_FIELDS,
 } from '../shared/game-config.js';
 import type { BulletState, CreateRoomResponse, InputState, PlanePhase, PlaneState, PlayerSlot, PlayerState, RoomState, ServerErrorCode, ServerMessage } from '../types/game.js';
-import type { PlaneStats, RunwayConfig } from '../types/config.js';
+import type { CloudConfig, PlaneStats, RunwayConfig } from '../types/config.js';
 import type { PlaneGeometry, PlanePoint } from '../types/geometry.js';
 import type { AppState, Cloud, CloudPuff, ConnectionPhase, PlayerCardRefs, RoomSnapshot, RunwayInputMap, SetupPanelMode, StatsInputMap } from '../types/client.js';
 
@@ -50,6 +51,17 @@ function loadImage(src: string): HTMLImageElement {
   return img;
 }
 
+function createSeededRandom(seed: number): () => number {
+  let state = seed >>> 0;
+
+  return () => {
+    state = (state + 0x6d2b79f5) | 0;
+    let mixed = Math.imul(state ^ (state >>> 15), 1 | state);
+    mixed ^= mixed + Math.imul(mixed ^ (mixed >>> 7), 61 | mixed);
+    return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 const PLANE_IMAGES: Record<PlayerSlot, HTMLImageElement> = {
   left:  loadImage(`/images/${DEFAULT_PLANE_CONFIG.left.planeImage}`),
   right: loadImage(`/images/${DEFAULT_PLANE_CONFIG.right.planeImage}`),
@@ -60,7 +72,10 @@ const BUILDING_IMAGES: Record<PlayerSlot, HTMLImageElement> = {
   right: loadImage(`/images/${DEFAULT_RUNWAY_CONFIG.right.buildingImage}`),
 };
 
-const horizonImage = loadImage(`/images/${HORIZON_CONFIG.image}`);
+const horizonImages = HORIZON_CONFIG.map((layer) => ({
+  ...layer,
+  image: loadImage(`/images/${layer.image}`)
+}));
 
 const FLAG_IMAGES = {
   neutral: loadImage(`/images/${FLAG_CONFIG.imageNeutral}`),
@@ -69,38 +84,52 @@ const FLAG_IMAGES = {
 };
 
 
-function generateClouds(): Cloud[] {
-  const count = 5 + Math.floor(Math.random() * 6); // 5–10 clouds
+function generateClouds(cloudConfig: CloudConfig): Cloud[] {
+  const random = createSeededRandom(cloudConfig.seed);
+  const countRange = Math.max(0, cloudConfig.maxCount - cloudConfig.minCount);
+  const baseCount = cloudConfig.minCount + Math.floor(random() * (countRange + 1));
   const upperThird = (GAME_HEIGHT - GROUND_HEIGHT) / 3;
   const clouds: Cloud[] = [];
 
   function makeCloud(y: number): Cloud {
-    const puffCount = 3 + Math.floor(Math.random() * 3); // 3–5 puffs
+    const puffCount = 3 + Math.floor(random() * 3); // 3–5 puffs
     const puffs: CloudPuff[] = [];
     let curX = 0;
     for (let p = 0; p < puffCount; p++) {
-      const r = 13 + Math.random() * 35;
-      puffs.push({ dx: curX, dy: (Math.random() - 0.5) * 12, r });
-      curX += r * (0.45 + Math.random() * 0.35);
+      const r = 13 + random() * 35;
+      puffs.push({ dx: curX, dy: (random() - 0.5) * 12, r });
+      curX += r * (0.45 + random() * 0.35);
     }
     const span = curX;
     for (const puff of puffs) puff.dx -= span / 2;
-    return { x: 60 + Math.random() * (GAME_WIDTH - 120), y, puffs, foreground: Math.random() < 2 / 3 };
+    return { x: 60 + random() * (GAME_WIDTH - 120), y, puffs, foreground: random() < 2 / 3 };
   }
 
-  for (let i = 0; i < count; i++) {
-    clouds.push(makeCloud(50 + Math.random() * 140));
+  for (let i = 0; i < baseCount; i++) {
+    clouds.push(makeCloud(50 + random() * 140));
   }
 
-  const upperCount = Math.round(count * 0.5);
+  const upperCount = Math.round(baseCount * cloudConfig.upperSkyDensity);
   for (let i = 0; i < upperCount; i++) {
-    clouds.push(makeCloud(20 + Math.random() * (upperThird - 20)));
+    clouds.push(makeCloud(20 + random() * (upperThird - 20)));
   }
 
   return clouds;
 }
 
-const CLOUDS = generateClouds();
+function areCloudConfigsEqual(left: CloudConfig, right: CloudConfig): boolean {
+  return (
+    left.seed === right.seed &&
+    left.minCount === right.minCount &&
+    left.maxCount === right.maxCount &&
+    left.upperSkyDensity === right.upperSkyDensity
+  );
+}
+
+let displayedClouds = generateClouds({
+  seed: 1,
+  ...CLOUD_CONFIG
+});
 
 
 const PLANE_GRID_EXTENT = 100;
@@ -201,15 +230,19 @@ function drawBackground(context: CanvasRenderingContext2D): void {
   context.fillStyle = groundGradient;
   context.fillRect(0, GAME_HEIGHT - GROUND_HEIGHT, GAME_WIDTH, GROUND_HEIGHT);
 
-  if (horizonImage.complete && horizonImage.naturalWidth > 0) {
-    const imgH = horizonImage.naturalHeight;
-    const y = GAME_HEIGHT - GROUND_HEIGHT - imgH + HORIZON_CONFIG.offsetY;
-    context.globalAlpha = HORIZON_CONFIG.alpha;
-    for (let x = 0; x < GAME_WIDTH; x += horizonImage.naturalWidth) {
-      context.drawImage(horizonImage, x, y);
+  for (const layer of horizonImages) {
+    if (!layer.image.complete || layer.image.naturalWidth <= 0) {
+      continue;
     }
-    context.globalAlpha = 1;
+
+    const imgH = layer.image.naturalHeight;
+    const y = GAME_HEIGHT - GROUND_HEIGHT - imgH + layer.offsetY;
+    context.globalAlpha = layer.alpha;
+    for (let x = 0; x < GAME_WIDTH; x += layer.image.naturalWidth) {
+      context.drawImage(layer.image, x, y);
+    }
   }
+  context.globalAlpha = 1;
 
   context.fillStyle = '#477f34';
   context.fillRect(0, GAME_HEIGHT - GROUND_HEIGHT, GAME_WIDTH, 10);
@@ -219,7 +252,7 @@ function drawBackground(context: CanvasRenderingContext2D): void {
 
 function drawClouds(context: CanvasRenderingContext2D, foreground: boolean): void {
   context.fillStyle = 'rgba(255, 255, 255, 0.85)';
-  for (const cloud of CLOUDS) {
+  for (const cloud of displayedClouds) {
     if (cloud.foreground !== foreground) continue;
     for (const puff of cloud.puffs) {
       context.beginPath();
@@ -736,7 +769,20 @@ function sendRunwayConfig(slot: PlayerSlot): void {
   }));
 }
 
-function buildStatsEditor(container: HTMLElement): void {
+type NumericEditorField<Key extends string> = {
+  key: Key;
+  label: string;
+  step: number;
+};
+
+function buildNumericEditor<Key extends string>(
+  container: HTMLElement,
+  titleSuffix: string,
+  fields: readonly NumericEditorField<Key>[],
+  values: Record<PlayerSlot, Record<Key, number>>,
+  inputsBySlot: Partial<Record<PlayerSlot, Record<Key, HTMLInputElement>>>,
+  onCommit: (slot: PlayerSlot, key: Key, value: number) => void
+): void {
   const grid = document.createElement('div');
   grid.className = 'stats-editor-grid';
 
@@ -746,12 +792,12 @@ function buildStatsEditor(container: HTMLElement): void {
 
     const heading = document.createElement('div');
     heading.className = `stats-slot-heading stats-slot-${slot}`;
-    heading.textContent = `${slot === 'left' ? 'Left' : 'Right'} Plane`;
+    heading.textContent = `${formatSlot(slot)} ${titleSuffix}`;
     column.append(heading);
 
-    const inputs: Partial<StatsInputMap> = {};
+    const inputs = {} as Record<Key, HTMLInputElement>;
 
-    for (const field of PLANE_STATS_FIELDS) {
+    for (const field of fields) {
       const fieldDiv = document.createElement('div');
       fieldDiv.className = 'stats-field';
 
@@ -764,15 +810,14 @@ function buildStatsEditor(container: HTMLElement): void {
       input.className = 'stats-input';
       input.step = String(field.step);
       input.min = String(field.step);
-      input.value = String(DEFAULT_PLANE_CONFIG[slot][field.key]);
+      input.value = String(values[slot][field.key]);
 
       input.addEventListener('change', () => {
         const parsed = parseFloat(input.value);
         if (Number.isFinite(parsed) && parsed > 0) {
-          editablePlaneStats[slot] = { ...editablePlaneStats[slot], [field.key]: parsed };
-          sendPlaneStats(slot);
+          onCommit(slot, field.key, parsed);
         } else {
-          input.value = String(editablePlaneStats[slot][field.key]);
+          input.value = String(values[slot][field.key]);
         }
       });
 
@@ -782,64 +827,31 @@ function buildStatsEditor(container: HTMLElement): void {
       inputs[field.key] = input;
     }
 
-    statsInputs[slot] = inputs as StatsInputMap;
+    inputsBySlot[slot] = inputs;
     grid.append(column);
   }
 
   container.append(grid);
 }
 
-function buildRunwayEditor(container: HTMLElement): void {
-  const grid = document.createElement('div');
-  grid.className = 'stats-editor-grid';
-
+function syncNumericInputs<Key extends string>(
+  fields: readonly NumericEditorField<Key>[],
+  values: Record<PlayerSlot, Record<Key, number>>,
+  inputsBySlot: Partial<Record<PlayerSlot, Record<Key, HTMLInputElement>>>
+): void {
   for (const slot of PLAYER_SLOTS) {
-    const column = document.createElement('div');
-    column.className = 'stats-column';
-
-    const heading = document.createElement('div');
-    heading.className = `stats-slot-heading stats-slot-${slot}`;
-    heading.textContent = `${slot === 'left' ? 'Left' : 'Right'} Runway`;
-    column.append(heading);
-
-    const inputs: Partial<RunwayInputMap> = {};
-
-    for (const field of RUNWAY_CONFIG_FIELDS) {
-      const fieldDiv = document.createElement('div');
-      fieldDiv.className = 'stats-field';
-
-      const label = document.createElement('label');
-      label.className = 'stats-field-label';
-      label.textContent = field.label;
-
-      const input = document.createElement('input');
-      input.type = 'number';
-      input.className = 'stats-input';
-      input.step = String(field.step);
-      input.min = String(field.step);
-      input.value = String(DEFAULT_RUNWAY_CONFIG[slot][field.key]);
-
-      input.addEventListener('change', () => {
-        const parsed = parseFloat(input.value);
-        if (Number.isFinite(parsed) && parsed > 0) {
-          editableRunwayConfig[slot] = { ...editableRunwayConfig[slot], [field.key]: parsed };
-          sendRunwayConfig(slot);
-        } else {
-          input.value = String(editableRunwayConfig[slot][field.key]);
-        }
-      });
-
-      label.append(input);
-      fieldDiv.append(label);
-      column.append(fieldDiv);
-      inputs[field.key] = input;
+    const inputMap = inputsBySlot[slot];
+    if (!inputMap) {
+      continue;
     }
 
-    runwayInputs[slot] = inputs as RunwayInputMap;
-    grid.append(column);
+    for (const { key } of fields) {
+      const input = inputMap[key];
+      if (document.activeElement !== input) {
+        input.value = String(values[slot][key]);
+      }
+    }
   }
-
-  container.append(grid);
 }
 
 // `render()` is the single place that synchronizes DOM controls from app state.
@@ -879,27 +891,8 @@ function render(): void {
   planeGeometryFeedbackElement.textContent = planeGeometryFeedback;
   planeGeometryFeedbackElement.hidden = planeGeometryFeedback === '';
 
-  for (const slot of PLAYER_SLOTS) {
-    const inputMap = statsInputs[slot];
-    if (inputMap) {
-      for (const { key } of PLANE_STATS_FIELDS) {
-        const input = inputMap[key];
-        if (document.activeElement !== input) {
-          input.value = String(editablePlaneStats[slot][key]);
-        }
-      }
-    }
-
-    const runwayMap = runwayInputs[slot];
-    if (runwayMap) {
-      for (const { key } of RUNWAY_CONFIG_FIELDS) {
-        const input = runwayMap[key];
-        if (document.activeElement !== input) {
-          input.value = String(editableRunwayConfig[slot][key]);
-        }
-      }
-    }
-  }
+  syncNumericInputs(PLANE_STATS_FIELDS, editablePlaneStats, statsInputs);
+  syncNumericInputs(RUNWAY_CONFIG_FIELDS, editableRunwayConfig, runwayInputs);
 
   renderPlayerList();
 }
@@ -915,6 +908,10 @@ function clearRoomSnapshots(): void {
 
 function setCurrentRoomState(nextRoomState: RoomState): void {
   const prevState = currentRoomSnapshot?.state;
+
+  if (!prevState || !areCloudConfigsEqual(prevState.roundSettings.clouds, nextRoomState.roundSettings.clouds)) {
+    displayedClouds = generateClouds(nextRoomState.roundSettings.clouds);
+  }
 
   if (prevState) {
     for (const player of nextRoomState.players) {
@@ -1871,8 +1868,28 @@ window.addEventListener('beforeunload', () => {
 });
 
 buildTelemetry(planeTelemetryContainer);
-buildStatsEditor(planeStatsContainer);
-buildRunwayEditor(runwayConfigContainer);
+buildNumericEditor(
+  planeStatsContainer,
+  'Plane',
+  PLANE_STATS_FIELDS,
+  editablePlaneStats,
+  statsInputs,
+  (slot, key, value) => {
+    editablePlaneStats[slot] = { ...editablePlaneStats[slot], [key]: value };
+    sendPlaneStats(slot);
+  }
+);
+buildNumericEditor(
+  runwayConfigContainer,
+  'Runway',
+  RUNWAY_CONFIG_FIELDS,
+  editableRunwayConfig,
+  runwayInputs,
+  (slot, key, value) => {
+    editableRunwayConfig[slot] = { ...editableRunwayConfig[slot], [key]: value };
+    sendRunwayConfig(slot);
+  }
+);
 render();
 window.requestAnimationFrame(drawFrame);
 

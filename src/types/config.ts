@@ -8,10 +8,21 @@ export interface RunwayConfig {
   buildingOffsetY: number;
 }
 
+export type NumericFieldKey<T> = {
+  [K in keyof T]-?: T[K] extends number ? K : never;
+}[keyof T];
+
 export interface RunwayConfigField {
-  key: keyof RunwayConfig;
+  key: NumericFieldKey<RunwayConfig>;
   label: string;
   step: number;
+}
+
+export interface CloudConfig {
+  seed: number;
+  minCount: number;
+  maxCount: number;
+  upperSkyDensity: number;
 }
 
 export interface PlaneStats {
@@ -30,7 +41,7 @@ export interface PlaneStats {
 }
 
 export interface PlaneStatsField {
-  key: keyof PlaneStats;
+  key: NumericFieldKey<PlaneStats>;
   label: string;
   step: number;
 }

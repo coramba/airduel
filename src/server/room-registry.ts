@@ -10,7 +10,7 @@ import {
   createDefaultPlayerState,
   normalizeRoomId,
 } from '../shared/game.js';
-import { DEFAULT_PLANE_CONFIG, DEFAULT_RUNWAY_CONFIG } from '../shared/game-config.js';
+import { createDefaultRoundSettings, DEFAULT_PLANE_CONFIG, DEFAULT_RUNWAY_CONFIG } from '../shared/game-config.js';
 import type { CreateRoomResponse, InputState, PlayerSlot, RoomState, ServerErrorCode } from '../types/game.js';
 import type { PlaneStats, RunwayConfig } from '../types/config.js';
 import type { JoinFailureCode, JoinRoomResult, RoomRecord } from '../types/server.js';
@@ -49,6 +49,7 @@ export class RoomRegistry {
         id: roomId,
         status: 'waiting',
         round: 1,
+        roundSettings: createDefaultRoundSettings(createRandomSeed()),
         message: 'Waiting for the second pilot to join.',
         players: PLAYER_SLOTS.map((slot) => createDefaultPlayerState(slot)),
         bullets: [],
@@ -282,6 +283,26 @@ export class RoomRegistry {
     }
   }
 
+  private clearRoundState(room: RoomRecord): void {
+    room.state.bullets = [];
+    room.state.rematchVotes = [];
+    room.state.winner = null;
+    room.state.explosionRemainingMs = 0;
+  }
+
+  private resetPlayersToSpawn(room: RoomRecord): void {
+    for (const player of room.state.players) {
+      player.input = createDefaultInputState();
+      player.plane = createDefaultPlaneState(player.slot, room.runwayConfig[player.slot].spawnX);
+    }
+  }
+
+  private resetPlayerInputs(room: RoomRecord): void {
+    for (const player of room.state.players) {
+      player.input = createDefaultInputState();
+    }
+  }
+
   private startRound(room: RoomRecord, incrementRound: boolean): void {
     // Starting a round wipes only round-scoped state.
     // Persistent values such as room id and player win counters are preserved.
@@ -293,16 +314,10 @@ export class RoomRegistry {
 
     room.state.status = 'active';
     room.state.message = `Round ${room.state.round} live.`;
-    room.state.bullets = [];
-    room.state.rematchVotes = [];
-    room.state.winner = null;
-    room.state.explosionRemainingMs = 0;
+    room.state.roundSettings = createDefaultRoundSettings(createRandomSeed());
+    this.clearRoundState(room);
     room.state.lastActivityAt = Date.now();
-
-    for (const player of room.state.players) {
-      player.input = createDefaultInputState();
-      player.plane = createDefaultPlaneState(player.slot, room.runwayConfig[player.slot].spawnX);
-    }
+    this.resetPlayersToSpawn(room);
   }
 
   private resetWaitingState(room: RoomRecord, message: string): void {
@@ -312,15 +327,9 @@ export class RoomRegistry {
 
     room.state.status = 'waiting';
     room.state.message = message;
-    room.state.bullets = [];
-    room.state.rematchVotes = [];
-    room.state.winner = null;
+    this.clearRoundState(room);
     room.state.lastActivityAt = Date.now();
-
-    for (const player of room.state.players) {
-      player.input = createDefaultInputState();
-      player.plane = createDefaultPlaneState(player.slot, room.runwayConfig[player.slot].spawnX);
-    }
+    this.resetPlayersToSpawn(room);
   }
 
   private finishRoundFromDisconnect(room: RoomRecord, departedSlot: PlayerSlot): void {
@@ -335,20 +344,17 @@ export class RoomRegistry {
 
     room.state.status = 'round_over';
     room.state.message = 'Other pilot disconnected. Round awarded to the remaining pilot.';
-    room.state.bullets = [];
-    room.state.rematchVotes = [];
+    this.clearRoundState(room);
     room.state.winner = remainingPlayer.slot === 'left' ? 'left_win' : 'right_win';
     remainingPlayer.wins += 1;
     room.state.lastActivityAt = Date.now();
+    this.resetPlayerInputs(room);
 
-    for (const player of room.state.players) {
-      player.input = createDefaultInputState();
-
-      if (player.slot === departedSlot) {
-        player.plane.phase = 'destroyed';
-        player.plane.velocity.x = 0;
-        player.plane.velocity.y = 0;
-      }
+    const departedPlayer = room.state.players.find((player) => player.slot === departedSlot);
+    if (departedPlayer) {
+      departedPlayer.plane.phase = 'destroyed';
+      departedPlayer.plane.velocity.x = 0;
+      departedPlayer.plane.velocity.y = 0;
     }
   }
 
@@ -402,4 +408,8 @@ function createRoomId(): string {
 // Reconnect tokens are not user-facing. They only need to be unguessable.
 function createReconnectToken(): string {
   return randomBytes(16).toString('hex');
+}
+
+function createRandomSeed(): number {
+  return randomBytes(4).readUInt32BE(0);
 }

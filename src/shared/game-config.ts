@@ -2,7 +2,8 @@
 // Type definitions (PlaneStats, RunwayConfig, …) live in src/types/config.ts.
 import { GAME_HEIGHT, GROUND_HEIGHT, RUNWAY_HEIGHT } from './game.js';
 import type { PlayerSlot } from '../types/game.js';
-import type { PlaneStats, PlaneStatsField, RunwayConfig, RunwayConfigField } from '../types/config.js';
+import type { RoundSettings } from '../types/game.js';
+import type { CloudConfig, PlaneStats, PlaneStatsField, RunwayConfig, RunwayConfigField } from '../types/config.js';
 
 export const FLAG_CONFIG = {
   imageNeutral: 'flag_n.png',
@@ -20,11 +21,39 @@ export const EXPLOSION_CONFIG = {
   shrinkMs: 400,
 };
 
-export const HORIZON_CONFIG = {
-  image: 'horizon3.png',
-  offsetY: 4,
-  alpha: 0.75,
+export const CLOUD_CONFIG: Omit<CloudConfig, 'seed'> = {
+  minCount: 5,
+  maxCount: 10,
+  upperSkyDensity: 0.5,
 };
+
+export function createDefaultRoundSettings(seed: number): RoundSettings {
+  return {
+    clouds: {
+      seed,
+      ...CLOUD_CONFIG
+    }
+  };
+}
+
+export interface HorizonConfig {
+  image: string;
+  offsetY: number;
+  alpha: number;
+}
+
+export const HORIZON_CONFIG: readonly HorizonConfig[] = [
+  {
+    image: 'horizon3.png',
+    offsetY: 4,
+    alpha: 0.65,
+  },
+  {
+    image: 'horizon4.png',
+    offsetY: 4,
+    alpha: 0.75,
+  },
+];
 
 export const RUNWAY_CONFIG_FIELDS: readonly RunwayConfigField[] = [
   { key: 'startX',          label: 'Runway start X (px)',    step: 5 },
