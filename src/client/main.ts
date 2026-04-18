@@ -92,12 +92,12 @@ interface Cloud { x: number; y: number; puffs: CloudPuff[]; foreground: boolean;
 
 function generateClouds(): Cloud[] {
   const count = 5 + Math.floor(Math.random() * 6); // 5–10 clouds
+  const upperThird = (GAME_HEIGHT - GROUND_HEIGHT) / 3;
   const clouds: Cloud[] = [];
-  for (let i = 0; i < count; i++) {
+
+  function makeCloud(y: number): Cloud {
     const puffCount = 3 + Math.floor(Math.random() * 3); // 3–5 puffs
     const puffs: CloudPuff[] = [];
-    // Walk along the X axis so the cloud is always wider than a single circle.
-    // Each puff overlaps the previous by 40–60% of its radius.
     let curX = 0;
     for (let p = 0; p < puffCount; p++) {
       const r = 13 + Math.random() * 35;
@@ -106,13 +106,18 @@ function generateClouds(): Cloud[] {
     }
     const span = curX;
     for (const puff of puffs) puff.dx -= span / 2;
-    clouds.push({
-      x: 60 + Math.random() * (GAME_WIDTH - 120),
-      y: 50 + Math.random() * 140,
-      puffs,
-      foreground: Math.random() < 2 / 3
-    });
+    return { x: 60 + Math.random() * (GAME_WIDTH - 120), y, puffs, foreground: Math.random() < 2 / 3 };
   }
+
+  for (let i = 0; i < count; i++) {
+    clouds.push(makeCloud(50 + Math.random() * 140));
+  }
+
+  const upperCount = Math.round(count * 0.5);
+  for (let i = 0; i < upperCount; i++) {
+    clouds.push(makeCloud(20 + Math.random() * (upperThird - 20)));
+  }
+
   return clouds;
 }
 
