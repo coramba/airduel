@@ -81,13 +81,13 @@ export function stepRoom(room: RoomRecord): boolean {
         break;
       case 'airborne':
         changed = updateAirbornePlane(player.slot, plane, player.input, stats) || changed;
-        if (plane.position.y >= runwayImpactY) {
+        if (plane.velocity.y >= 0 && lowestCollisionY(player.slot, plane) >= runwayImpactY) {
           resolveGroundContact(player.slot, plane, stats, destroyedSlots);
         }
         break;
       case 'stall':
         changed = updateStalledPlane(player.slot, plane, stats) || changed;
-        if (plane.position.y >= runwayImpactY) {
+        if (plane.velocity.y >= 0 && lowestCollisionY(player.slot, plane) >= runwayImpactY) {
           resolveGroundContact(player.slot, plane, stats, destroyedSlots);
         }
         break;
@@ -250,13 +250,26 @@ function updateStalledPlane(
   return true;
 }
 
+function lowestCollisionY(slot: PlayerSlot, plane: PlaneState): number {
+  let maxY = -Infinity;
+  for (const polygon of getPlaneCollisionPolygons(slot, plane)) {
+    for (const point of polygon) {
+      if (point.y > maxY) maxY = point.y;
+    }
+  }
+  return maxY;
+}
+
 function resolveGroundContact(
   slot: PlayerSlot,
   plane: PlaneState,
   stats: PlaneStats,
   destroyedSlots: Set<PlayerSlot>
 ): void {
-  if (plane.velocity.y < stats.allowedLandingSpeed) {
+  const angleDiff = Math.abs(normalizeAngle(plane.angle - baseAngle(slot)));
+  const rightSideUp = angleDiff <= Math.PI / 2;
+
+  if (rightSideUp && plane.velocity.y < stats.allowedLandingSpeed) {
     plane.phase = 'landing';
     plane.position.y = RUNWAY_PLANE_Y;
     plane.velocity.y = 0;

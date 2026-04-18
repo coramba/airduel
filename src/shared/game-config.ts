@@ -3,6 +3,15 @@
 import type { PlayerSlot } from '../types/game.js';
 import type { PlaneStats, PlaneStatsField, RunwayConfig, RunwayConfigField } from '../types/config.js';
 
+export const FLAG_CONFIG = {
+  imageNeutral: 'flag_n.png',
+  imageLeft:    'flag_l.png',
+  imageRight:   'flag_r.png',
+  x:       409,
+  offsetX:  46,
+  offsetY:   5,
+};
+
 export const EXPLOSION_CONFIG = {
   image: 'airexplosion1.gif',
   durationMs: 1500,

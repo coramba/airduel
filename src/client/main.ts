@@ -6,6 +6,7 @@ import {
   PLAYER_SLOTS,
   PLANE_WRAP_MARGIN,
   RUNWAY_HEIGHT,
+  RUNWAY_PLANE_Y,
   createDefaultInputState,
 } from '../shared/game.js';
 import {
@@ -16,6 +17,7 @@ import {
   DEFAULT_PLANE_CONFIG,
   DEFAULT_RUNWAY_CONFIG,
   EXPLOSION_CONFIG,
+  FLAG_CONFIG,
   HORIZON_CONFIG,
   PLANE_STATS_FIELDS,
   RUNWAY_CONFIG_FIELDS,
@@ -56,6 +58,12 @@ const BUILDING_IMAGES: Record<PlayerSlot, HTMLImageElement> = {
 };
 
 const horizonImage = loadImage(`/images/${HORIZON_CONFIG.image}`);
+
+const FLAG_IMAGES = {
+  neutral: loadImage(`/images/${FLAG_CONFIG.imageNeutral}`),
+  left:    loadImage(`/images/${FLAG_CONFIG.imageLeft}`),
+  right:   loadImage(`/images/${FLAG_CONFIG.imageRight}`),
+};
 
 
 function generateClouds(): Cloud[] {
@@ -142,6 +150,7 @@ function drawScene(
   }
 
   drawRunways(context);
+  drawFlag(context, roomState);
 
   for (const bullet of roomState.bullets) {
     drawBullet(context, bullet);
@@ -155,6 +164,18 @@ function drawScene(
 
   if (shouldShowHud(roomState)) {
     drawHud(context, appState, roomState);
+  }
+
+  if (showPlaneGrid) {
+    context.save();
+    context.strokeStyle = 'rgba(255, 0, 0, 0.8)';
+    context.lineWidth = 1;
+    context.setLineDash([6, 4]);
+    context.beginPath();
+    context.moveTo(0, RUNWAY_PLANE_Y);
+    context.lineTo(GAME_WIDTH, RUNWAY_PLANE_Y);
+    context.stroke();
+    context.restore();
   }
 
   if (roomState.status === 'round_over') {
@@ -231,6 +252,29 @@ function drawRunways(context: CanvasRenderingContext2D): void {
       context.drawImage(img, bx, by);
     }
   }
+}
+
+function drawFlag(context: CanvasRenderingContext2D, roomState: RoomState | null): void {
+  let leftWins = 0;
+  let rightWins = 0;
+  if (roomState) {
+    for (const p of roomState.players) {
+      if (p.slot === 'left') leftWins = p.wins;
+      else rightWins = p.wins;
+    }
+  }
+
+  const key = leftWins > rightWins ? 'left' : rightWins > leftWins ? 'right' : 'neutral';
+  const img = FLAG_IMAGES[key];
+
+  if (!img.complete || img.naturalWidth === 0) {
+    return;
+  }
+
+  const groundY = GAME_HEIGHT - GROUND_HEIGHT;
+  const imgX = FLAG_CONFIG.x + FLAG_CONFIG.offsetX - img.naturalWidth / 2;
+  const imgY = groundY - img.naturalHeight + FLAG_CONFIG.offsetY;
+  context.drawImage(img, imgX, imgY);
 }
 
 function drawHeadline(context: CanvasRenderingContext2D, title: string, subtitle: string): void {
