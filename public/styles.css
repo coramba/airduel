@@ -1107,21 +1107,19 @@ code {
   flex-shrink: 0;
 }
 
-@media (max-width: 1180px) {
+@media (max-width: 900px) {
+  .shell {
+    width: calc(100vw - 16px);
+    padding: 8px 0 14px;
+    gap: 10px;
+  }
+
   .topbar {
     grid-template-columns: 1fr;
   }
 
   .topbar__right {
     justify-content: space-between;
-  }
-}
-
-@media (max-width: 900px) {
-  .shell {
-    width: calc(100vw - 16px);
-    padding: 8px 0 14px;
-    gap: 10px;
   }
 
   .matchup-board {
