@@ -6,7 +6,6 @@ import {
   GROUND_HEIGHT,
   PLAYER_SLOTS,
   PLANE_WRAP_MARGIN,
-  ROOM_ID_LENGTH,
   RUNWAY_HEIGHT,
   createDefaultInputState,
   normalizeRoomId,
@@ -15,6 +14,7 @@ import {
   PLANE_GEOMETRY,
   getPlaneShapeOrigin,
 } from '../shared/plane-shape.js';
+import { createClientDom } from './dom.js';
 import {
   CLOUD_CONFIG,
   DEFAULT_PLANE_CONFIG,
@@ -22,23 +22,19 @@ import {
   DEFAULT_SPAWN_X,
   EXPLOSION_CONFIG,
   FLAG_CONFIG,
-  getEffectiveTurnRate,
   HORIZON_CONFIG,
-  PLANE_STATS_FIELDS,
-  RUNWAY_CONFIG_FIELDS,
-  SPAWN_X_STEP,
 } from '../shared/game-config.js';
-import type { BulletState, CreateRoomResponse, InputState, PlanePhase, PlaneState, PlayerSlot, PlayerState, RoomState, ServerErrorCode, ServerMessage } from '../types/game.js';
+import type { BulletState, InputState, PlanePhase, PlaneState, PlayerSlot, PlayerState, RoomState, ServerErrorCode, ServerMessage } from '../types/game.js';
 import type { CloudConfig, PlaneStats, RunwayConfig } from '../types/config.js';
 import type { PlaneGeometry, PlanePoint } from '../types/geometry.js';
-import type { AppState, Cloud, CloudPuff, PlayerCardRefs, RoomSnapshot, RunwayInputMap, StatsInputMap } from '../types/client.js';
+import type { AppState, Cloud, CloudPuff, RoomSnapshot } from '../types/client.js';
 
 // Browser runtime for the game client.
 // This file owns:
 // - canvas rendering
-// - lightweight UI state for room setup
+// - runtime state and interpolation
 // - websocket lifecycle
-// - keyboard input capture
+// - battlefield input capture
 // The server remains authoritative for room state and simulation.
 // Type definitions (AppState, Cloud, RoomSnapshot, …) live in src/types/client.ts.
 
@@ -149,16 +145,6 @@ function saveReconnectToken(roomId: string, reconnectToken: string): void {
   window.sessionStorage.setItem(`airduel:reconnect:${roomId}`, reconnectToken);
 }
 
-function requireElement<T extends HTMLElement>(selector: string): T {
-  const element = document.querySelector<T>(selector);
-
-  if (!element) {
-    throw new Error(`Missing required element: ${selector}`);
-  }
-
-  return element;
-}
-
 // Canvas rendering section.
 // The draw helpers are intentionally stateless: they render the current app
 // snapshot without mutating gameplay state.
@@ -179,7 +165,6 @@ function drawScene(
   drawBackground(context);
 
   if (!roomState) {
-    drawHeadline(context, 'Create or join a room', 'Room setup happens first, then the duel runs here.');
     return;
   }
 
@@ -195,11 +180,6 @@ function drawScene(
   }
 
   drawClouds(context, true);
-
-  if (shouldShowHud(roomState)) {
-    drawHud(context, appState, roomState);
-  }
-
   if (showPlaneGrid) {
     context.save();
     context.strokeStyle = 'rgba(255, 0, 0, 0.8)';
@@ -210,10 +190,6 @@ function drawScene(
     context.lineTo(GAME_WIDTH, GROUND_CONTACT_Y);
     context.stroke();
     context.restore();
-  }
-
-  if (roomState.status === 'round_over') {
-    drawRoundResult(context, appState, roomState);
   }
 }
 
@@ -311,47 +287,6 @@ function drawFlag(context: CanvasRenderingContext2D, roomState: RoomState | null
   const imgX = FLAG_CONFIG.x + FLAG_CONFIG.offsetX - img.naturalWidth / 2;
   const imgY = groundY - img.naturalHeight + FLAG_CONFIG.offsetY;
   context.drawImage(img, imgX, imgY);
-}
-
-function drawHeadline(context: CanvasRenderingContext2D, title: string, subtitle: string): void {
-  context.fillStyle = 'rgba(255, 248, 234, 0.92)';
-  context.fillRect(26, 26, 510, 92);
-  context.fillStyle = '#15314b';
-  context.font = '700 29px "Trebuchet MS", sans-serif';
-  context.fillText(title, 46, 62);
-  context.font = '16px "Trebuchet MS", sans-serif';
-  context.fillText(subtitle, 46, 92);
-}
-
-function drawHud(context: CanvasRenderingContext2D, appState: AppState, roomState: RoomState): void {
-  // The HUD is shown only during the waiting phase, so the status text can stay
-  // focused on room setup instead of active-flight instructions.
-  const statusLine = getWaitingHudStatusText(appState);
-  const detailLine = appState.feedback;
-
-  context.fillStyle = 'rgba(255, 248, 234, 0.9)';
-  context.fillRect(24, 22, 540, 112);
-  context.fillStyle = '#15314b';
-  context.font = '700 28px "Trebuchet MS", sans-serif';
-  const statusLineCount = drawWrappedText(context, statusLine, 42, 58, 500, 28);
-  context.font = '16px "Trebuchet MS", sans-serif';
-  drawWrappedText(context, detailLine, 42, 58 + statusLineCount * 28 + 10, 500, 20);
-
-  const ownPlayer = appState.slot
-    ? roomState.players.find((player) => player.slot === appState.slot) ?? null
-    : null;
-
-  context.fillStyle = 'rgba(21, 49, 75, 0.82)';
-  context.fillRect(GAME_WIDTH - 270, 24, 230, 78);
-  context.fillStyle = '#f8fbff';
-  context.font = '700 17px "Trebuchet MS", sans-serif';
-  context.fillText(`Room ${roomState.id}`, GAME_WIDTH - 250, 50);
-  context.font = '15px "Trebuchet MS", sans-serif';
-  context.fillText(
-    ownPlayer ? `${formatSlot(ownPlayer.slot)} pilot: ${formatPhase(ownPlayer.plane.phase)}` : 'Awaiting assignment',
-    GAME_WIDTH - 250,
-    76
-  );
 }
 
 function drawPlane(
@@ -556,62 +491,6 @@ function drawBullet(context: CanvasRenderingContext2D, bullet: BulletState): voi
   );
 }
 
-function drawRoundResult(context: CanvasRenderingContext2D, appState: AppState, roomState: RoomState): void {
-  const resultLine = getRoundResultText(roomState, appState.slot);
-  const subLine = getRoundOverlayMessage(appState);
-  const boxWidth = 640;
-  const boxHeight = 146;
-  const boxX = Math.round((GAME_WIDTH - boxWidth) / 2);
-  const boxY = Math.round(GAME_HEIGHT * 0.29);
-  const textX = boxX + 38;
-  const hasRequestedRematch = hasRequestedRematchFor(appState);
-
-  context.fillStyle = 'rgba(14, 26, 38, 0.74)';
-  context.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
-  drawRoundedRect(context, boxX, boxY, boxWidth, boxHeight, 18, '#fffaf0');
-  context.strokeStyle = 'rgba(217, 205, 174, 0.9)';
-  context.lineWidth = 2;
-  strokeRoundedRect(context, boxX, boxY, boxWidth, boxHeight, 18);
-
-  context.fillStyle = '#35508a';
-  context.font = '700 42px "Trebuchet MS", sans-serif';
-  context.fillText(resultLine, textX, boxY + 60);
-
-  if (hasRequestedRematch) {
-    context.fillStyle = '#5c6585';
-    context.font = '20px "Trebuchet MS", sans-serif';
-    drawWrappedText(context, subLine, textX, boxY + 108, boxWidth - 76, 28);
-  } else {
-    drawRematchPromptLine(context, textX, boxY + 108);
-  }
-}
-
-function drawRematchPromptLine(
-  context: CanvasRenderingContext2D,
-  x: number,
-  y: number
-): void {
-  context.fillStyle = '#5c6585';
-  context.font = '20px "Trebuchet MS", sans-serif';
-  context.textBaseline = 'middle';
-
-  context.fillText('Press', x, y);
-
-  const keyX = x + context.measureText('Press').width + 14;
-  drawRoundedRect(context, keyX, y - 17, 32, 34, 8, '#fbf2de');
-  context.strokeStyle = '#d9cdae';
-  context.lineWidth = 2;
-  strokeRoundedRect(context, keyX, y - 17, 32, 34, 8);
-  context.fillStyle = '#5c6585';
-  context.font = '700 21px "Trebuchet MS", sans-serif';
-  context.fillText('Y', keyX + 10, y + 1);
-
-  const tailX = keyX + 44;
-  context.fillStyle = '#5c6585';
-  context.font = '20px "Trebuchet MS", sans-serif';
-  context.fillText('or tap Rematch to fly again.', tailX, y);
-}
-
 function drawRoundedRect(
   context: CanvasRenderingContext2D,
   x: number,
@@ -644,119 +523,50 @@ function strokeRoundedRect(
   context.restore();
 }
 
-// Simple canvas word-wrapping helper reused by the waiting HUD and the
-// round-over overlay so message changes do not require hand-tuned coordinates.
-function drawWrappedText(
-  context: CanvasRenderingContext2D,
-  text: string,
-  x: number,
-  y: number,
-  maxWidth: number,
-  lineHeight: number
-): number {
-  const words = text.split(/\s+/);
-  let currentLine = '';
-  let currentY = y;
-  let lineCount = 0;
 
-  for (const word of words) {
-    const nextLine = currentLine ? `${currentLine} ${word}` : word;
-    if (currentLine && context.measureText(nextLine).width > maxWidth) {
-      context.fillText(currentLine, x, currentY);
-      lineCount += 1;
-      currentLine = word;
-      currentY += lineHeight;
-      continue;
-    }
-
-    currentLine = nextLine;
-  }
-
-  if (currentLine) {
-    context.fillText(currentLine, x, currentY);
-    lineCount += 1;
-  }
-
-  return lineCount;
-}
-
-// DOM bootstrap section.
-// Elements are grabbed once at startup and updated through the centralized
-// `render()` function below.
-const canvasRoot = requireElement<HTMLDivElement>('#canvas-root');
-const createRoomButton = requireElement<HTMLButtonElement>('#create-room-button');
-const secondaryActionButton = requireElement<HTMLButtonElement>('#secondary-action-button');
-const roomStrip = requireElement<HTMLDivElement>('#room-strip');
-const roomCodeDisplay = requireElement<HTMLSpanElement>('#room-code-display');
-const copyLinkButton = requireElement<HTMLButtonElement>('#copy-link-button');
-const controlsMenu = requireElement<HTMLDetailsElement>('.controls-menu');
-const rematchRow = requireElement<HTMLDivElement>('#rematch-row');
-const rematchButton = requireElement<HTMLButtonElement>('#rematch-button');
-const setupModal = requireElement<HTMLDivElement>('#setup-modal');
-const setupModalTitle = requireElement<HTMLHeadingElement>('#setup-modal-title');
-const setupModalCopy = requireElement<HTMLParagraphElement>('#setup-modal-copy');
-const setupModalCloseButton = requireElement<HTMLButtonElement>('#setup-modal-close');
-const setupForm = requireElement<HTMLFormElement>('#setup-form');
-const sharePanel = requireElement<HTMLDivElement>('#share-panel');
-const shareRoomCode = requireElement<HTMLDivElement>('#share-room-code');
-const shareLinkText = requireElement<HTMLParagraphElement>('#share-link-text');
-const shareCopyLinkButton = requireElement<HTMLButtonElement>('#share-copy-link-button');
-const shareCopyCodeButton = requireElement<HTMLButtonElement>('#share-copy-code-button');
-const setupFieldLabel = requireElement<HTMLLabelElement>('#setup-field-label');
-const joinRoomInput = requireElement<HTMLInputElement>('#join-room-input');
-const setupSubmitButton = requireElement<HTMLButtonElement>('#setup-submit-button');
-const setupErrorElement = requireElement<HTMLParagraphElement>('#setup-error');
-const connectionDotElement = requireElement<HTMLSpanElement>('#connection-dot');
-const connectionLabelElement = requireElement<HTMLSpanElement>('#connection-label');
-const playerListElement = requireElement<HTMLUListElement>('#player-list');
-const matchRoundElement = requireElement<HTMLParagraphElement>('#match-round');
-const matchStatusElement = requireElement<HTMLParagraphElement>('#match-status');
-const planeDebugPanel = requireElement<HTMLDivElement>('#plane-debug-panel');
-const planeTelemetryContainer = requireElement<HTMLDivElement>('#plane-telemetry');
-const planeGeometryEditor = requireElement<HTMLTextAreaElement>('#plane-geometry-editor');
-const planeGeometryFeedbackElement = requireElement<HTMLParagraphElement>('#plane-geometry-feedback');
-const planeStatsContainer = requireElement<HTMLDivElement>('#plane-stats-container');
-const runwayConfigContainer = requireElement<HTMLDivElement>('#runway-config-container');
 const canvas = createCanvas();
 const canvasContext = canvas.getContext('2d');
+const initialRoomId = extractRoomId(window.location.href);
 
 if (!canvasContext) {
   throw new Error('Canvas 2D context is unavailable.');
 }
 
 const context = canvasContext;
-canvasRoot.replaceChildren(canvas);
-
-function createExplosionSprite(): HTMLImageElement {
-  const img = new Image();
-  img.src = `/images/${EXPLOSION_CONFIG.image}`;
-  img.className = 'explosion-sprite';
-  canvasRoot.appendChild(img);
-  return img;
-}
+const ui = createClientDom({
+  initialRoomId,
+  connectToRoom: (roomId) => {
+    connectToRoom(roomId);
+  },
+  onRematch: () => {
+    sendRematchRequest();
+  },
+  onPlaneGeometryInput: (value) => {
+    applyPlaneGeometryDraft(value);
+  },
+  onPlaneStatsChange: (slot, key, value) => {
+    editablePlaneStats[slot] = { ...editablePlaneStats[slot], [key]: value };
+    sendPlaneStats(slot);
+  },
+  onSpawnXChange: (slot, value) => {
+    editableSpawnX[slot] = value;
+    sendSpawnX(slot);
+  },
+  onRunwayConfigChange: (slot, key, value) => {
+    editableRunwayConfig[slot] = { ...editableRunwayConfig[slot], [key]: value };
+  }
+});
+ui.mountCanvas(canvas);
 
 const explosionSprites: Record<PlayerSlot, HTMLImageElement> = {
-  left: createExplosionSprite(),
-  right: createExplosionSprite()
+  left: ui.createExplosionSprite(),
+  right: ui.createExplosionSprite()
 };
-
-const playerCardRefs = new Map<PlayerSlot, PlayerCardRefs>(
-  PLAYER_SLOTS.map((slot) => [slot, createPlayerCard(slot)])
-);
-playerListElement.replaceChildren(...PLAYER_SLOTS.map((slot) => playerCardRefs.get(slot)!.item));
-
-const initialRoomId = extractRoomId(window.location.href);
 
 const state: AppState = {
   roomId: initialRoomId,
-  roomLink: initialRoomId ? `${window.location.origin}/?room=${initialRoomId}` : null,
   slot: null,
-  roomState: null,
-  phase: initialRoomId ? 'connecting' : 'idle',
-  feedback: initialRoomId
-    ? `Joining room ${initialRoomId} from the current URL.`
-    : 'Create a room or join with a code to start.',
-  setupPanelMode: 'hidden'
+  roomState: null
 };
 
 let socket: WebSocket | null = null;
@@ -783,67 +593,6 @@ const editableRunwayConfig: Record<PlayerSlot, RunwayConfig> = {
   right: { ...DEFAULT_RUNWAY_CONFIG.right }
 };
 
-const spawnInputs: Partial<Record<PlayerSlot, HTMLInputElement>> = {};
-const statsInputs: Partial<Record<PlayerSlot, StatsInputMap>> = {};
-const runwayInputs: Partial<Record<PlayerSlot, RunwayInputMap>> = {};
-
-const TELEMETRY_ROWS = [
-  { key: 'speed',    label: 'Speed'        },
-  { key: 'turnRate', label: 'Turn rate'    },
-  { key: 'vx',       label: 'Velocity X'  },
-  { key: 'vy',       label: 'Velocity Y'  },
-  { key: 'accel',    label: 'Acceleration' },
-] as const;
-
-type TelemetryKey = (typeof TELEMETRY_ROWS)[number]['key'];
-const telemetrySpans = {} as Record<TelemetryKey, HTMLSpanElement>;
-
-function buildTelemetry(container: HTMLElement): void {
-  for (const row of TELEMETRY_ROWS) {
-    const label = document.createElement('span');
-    label.className = 'tel-label';
-    label.textContent = row.label;
-
-    const value = document.createElement('span');
-    value.className = 'tel-value';
-    value.textContent = '—';
-
-    telemetrySpans[row.key] = value;
-    container.append(label, value);
-  }
-}
-
-function updateTelemetry(): void {
-  if (!showPlaneGrid) {
-    return;
-  }
-
-  const { slot, roomState } = state;
-
-  if (!slot || !roomState || roomState.status !== 'active') {
-    for (const row of TELEMETRY_ROWS) {
-      telemetrySpans[row.key].textContent = '—';
-    }
-    return;
-  }
-
-  const player = roomState.players.find((p) => p.slot === slot);
-  if (!player) {
-    return;
-  }
-
-  const { plane } = player;
-  const stats = editablePlaneStats[slot];
-  const speed = Math.hypot(plane.velocity.x, plane.velocity.y);
-  const effectiveTurnRate = getEffectiveTurnRate(speed, stats);
-
-  telemetrySpans.speed.textContent    = `${speed.toFixed(1)} px/s`;
-  telemetrySpans.turnRate.textContent = `${effectiveTurnRate.toFixed(2)} rad/s`;
-  telemetrySpans.vx.textContent       = `${plane.velocity.x.toFixed(1)} px/s`;
-  telemetrySpans.vy.textContent       = `${plane.velocity.y.toFixed(1)} px/s`;
-  telemetrySpans.accel.textContent    = `${stats.acceleration} px/s²`;
-}
-
 function sendPlaneStats(slot: PlayerSlot): void {
   if (!socket || socket.readyState !== WebSocket.OPEN) {
     return;
@@ -864,212 +613,18 @@ function sendSpawnX(slot: PlayerSlot): void {
   }));
 }
 
-type NumericEditorField<Key extends string> = {
-  key: Key;
-  label: string;
-  step: number;
-};
-
-function buildNumericEditor<Key extends string>(
-  container: HTMLElement,
-  titleSuffix: string,
-  fields: readonly NumericEditorField<Key>[],
-  values: Record<PlayerSlot, Record<Key, number>>,
-  inputsBySlot: Partial<Record<PlayerSlot, Record<Key, HTMLInputElement>>>,
-  onCommit: (slot: PlayerSlot, key: Key, value: number) => void
-): void {
-  const grid = document.createElement('div');
-  grid.className = 'stats-editor-grid';
-
-  for (const slot of PLAYER_SLOTS) {
-    const column = document.createElement('div');
-    column.className = 'stats-column';
-
-    const heading = document.createElement('div');
-    heading.className = `stats-slot-heading stats-slot-${slot}`;
-    heading.textContent = `${formatSlot(slot)} ${titleSuffix}`;
-    column.append(heading);
-
-    const inputs = {} as Record<Key, HTMLInputElement>;
-
-    for (const field of fields) {
-      const fieldDiv = document.createElement('div');
-      fieldDiv.className = 'stats-field';
-
-      const label = document.createElement('label');
-      label.className = 'stats-field-label';
-      label.textContent = field.label;
-
-      const input = document.createElement('input');
-      input.type = 'number';
-      input.className = 'stats-input';
-      input.step = String(field.step);
-      input.min = String(field.step);
-      input.value = String(values[slot][field.key]);
-
-      input.addEventListener('change', () => {
-        const parsed = parseFloat(input.value);
-        if (Number.isFinite(parsed) && parsed > 0) {
-          onCommit(slot, field.key, parsed);
-        } else {
-          input.value = String(values[slot][field.key]);
-        }
-      });
-
-      label.append(input);
-      fieldDiv.append(label);
-      column.append(fieldDiv);
-      inputs[field.key] = input;
-    }
-
-    inputsBySlot[slot] = inputs;
-    grid.append(column);
-  }
-
-  container.append(grid);
-}
-
-function syncNumericInputs<Key extends string>(
-  fields: readonly NumericEditorField<Key>[],
-  values: Record<PlayerSlot, Record<Key, number>>,
-  inputsBySlot: Partial<Record<PlayerSlot, Record<Key, HTMLInputElement>>>
-): void {
-  for (const slot of PLAYER_SLOTS) {
-    const inputMap = inputsBySlot[slot];
-    if (!inputMap) {
-      continue;
-    }
-
-    for (const { key } of fields) {
-      const input = inputMap[key];
-      if (document.activeElement !== input) {
-        input.value = String(values[slot][key]);
-      }
-    }
-  }
-}
-
-function buildSpawnEditor(container: HTMLElement): void {
-  const grid = document.createElement('div');
-  grid.className = 'stats-editor-grid';
-
-  for (const slot of PLAYER_SLOTS) {
-    const column = document.createElement('div');
-    column.className = 'stats-column';
-
-    const heading = document.createElement('div');
-    heading.className = `stats-slot-heading stats-slot-${slot}`;
-    heading.textContent = `${formatSlot(slot)} Spawn`;
-    column.append(heading);
-
-    const fieldDiv = document.createElement('div');
-    fieldDiv.className = 'stats-field';
-
-    const label = document.createElement('label');
-    label.className = 'stats-field-label';
-    label.textContent = 'Spawn X (px)';
-
-    const input = document.createElement('input');
-    input.type = 'number';
-    input.className = 'stats-input';
-    input.step = String(SPAWN_X_STEP);
-    input.min = String(SPAWN_X_STEP);
-    input.value = String(editableSpawnX[slot]);
-
-    input.addEventListener('change', () => {
-      const parsed = parseFloat(input.value);
-      if (Number.isFinite(parsed) && parsed > 0) {
-        editableSpawnX[slot] = parsed;
-        sendSpawnX(slot);
-      } else {
-        input.value = String(editableSpawnX[slot]);
-      }
-    });
-
-    label.append(input);
-    fieldDiv.append(label);
-    column.append(fieldDiv);
-    grid.append(column);
-    spawnInputs[slot] = input;
-  }
-
-  container.append(grid);
-}
-
-function syncSpawnInputs(): void {
-  for (const slot of PLAYER_SLOTS) {
-    const input = spawnInputs[slot];
-    if (input && document.activeElement !== input) {
-      input.value = String(editableSpawnX[slot]);
-    }
-  }
-}
-
-// `render()` is the single place that synchronizes DOM controls from app state.
-// Gameplay visuals are rendered continuously by `requestAnimationFrame`, while
-// this UI sync only updates the DOM controls and side panel.
 function render(): void {
-  const isBusy = state.phase === 'creating' || state.phase === 'connecting';
-  createRoomButton.disabled = isBusy;
-  secondaryActionButton.disabled = isBusy;
-
-  const rematchVisible = state.roomState?.status === 'round_over';
-  rematchRow.hidden = !rematchVisible;
-  rematchButton.textContent = hasRequestedRematch() ? 'Rematch Requested' : 'Rematch';
-  rematchButton.disabled = !canRequestRematch();
-  roomStrip.hidden = !state.roomId;
-  roomCodeDisplay.textContent = state.roomId ?? '------';
-  copyLinkButton.disabled = !state.roomLink;
-
-  const setupVisible = shouldShowSetupPanel();
-  setupModal.hidden = !setupVisible;
-
-  if (setupVisible) {
-    const shareMode = state.setupPanelMode === 'share';
-    setupForm.dataset.mode = shareMode ? 'share' : 'join';
-    setupForm.hidden = shareMode;
-    sharePanel.hidden = !shareMode;
-    setupModalTitle.textContent = shareMode ? 'Match Ready' : 'Join Match';
-    setupModalCopy.textContent = shareMode
-      ? 'Room created. Share the link below with another pilot.'
-      : 'Got a code from another pilot? Enter it below to take the open seat.';
-    if (shareMode) {
-      renderShareCode(state.roomId);
-      shareLinkText.textContent = state.roomLink ?? '';
-      shareCopyLinkButton.disabled = !state.roomLink;
-      shareCopyCodeButton.disabled = !state.roomId;
-    } else {
-      setupFieldLabel.textContent = 'Paste code or join link';
-      joinRoomInput.readOnly = false;
-      joinRoomInput.placeholder = 'Paste code or join link';
-      setupSubmitButton.textContent = 'Join';
-      setupSubmitButton.disabled = isBusy;
-      const shouldShowSetupError = state.phase === 'error' && state.feedback !== '';
-      setupErrorElement.hidden = !shouldShowSetupError;
-      setupErrorElement.textContent = shouldShowSetupError ? state.feedback : '';
-    }
-  } else {
-    setupErrorElement.hidden = true;
-    setupErrorElement.textContent = '';
-  }
-
-  connectionDotElement.className = `connection-dot ${getConnectionTone()}`;
-  connectionLabelElement.textContent = getConnectionLabel();
-  matchRoundElement.textContent = state.roomState ? `Round ${state.roomState.round}` : 'Round 1';
-  matchStatusElement.textContent = getMatchStatusLabel();
-  matchStatusElement.className = `vs-state ${getMatchStatusTone()}`;
-  planeDebugPanel.hidden = !showPlaneGrid;
-  if (document.activeElement !== planeGeometryEditor && planeGeometryEditor.value !== planeGeometryDraft) {
-    planeGeometryEditor.value = planeGeometryDraft;
-  }
-  planeGeometryFeedbackElement.textContent = planeGeometryFeedback;
-  planeGeometryFeedbackElement.hidden = planeGeometryFeedback === '';
-
-  syncNumericInputs(PLANE_STATS_FIELDS, editablePlaneStats, statsInputs);
-  syncSpawnInputs();
-  syncNumericInputs(RUNWAY_CONFIG_FIELDS, editableRunwayConfig, runwayInputs);
-
-  renderPlayerList();
+  ui.render({
+    appState: state,
+    canRequestRematch: canRequestRematch(),
+    editablePlaneStats,
+    editableRunwayConfig,
+    editableSpawnX,
+    hasRequestedRematch: hasRequestedRematch(),
+    planeGeometryDraft,
+    planeGeometryFeedback,
+    showPlaneGrid
+  });
 }
 
 function clearRoomSnapshots(): void {
@@ -1115,7 +670,17 @@ function drawFrame(frameTimeMs: number): void {
   const displayedRoomState = getDisplayedRoomState(frameTimeMs);
   drawScene(context, state, displayedRoomState);
   updateExplosionSprites();
-  updateTelemetry();
+  ui.updateTelemetry({
+    appState: state,
+    canRequestRematch: canRequestRematch(),
+    editablePlaneStats,
+    editableRunwayConfig,
+    editableSpawnX,
+    hasRequestedRematch: hasRequestedRematch(),
+    planeGeometryDraft,
+    planeGeometryFeedback,
+    showPlaneGrid
+  });
   window.requestAnimationFrame(drawFrame);
 }
 
@@ -1298,292 +863,10 @@ function serializePlaneGeometry(geometry: PlaneGeometry): string {
   return JSON.stringify(geometry, null, 2);
 }
 
-function shouldShowHud(roomState: RoomState): boolean {
-  return roomState.status === 'waiting';
-}
-
-// Waiting HUD copy is intentionally small and specific to the only phase that
-// still uses the in-canvas HUD after the UI cleanup passes.
-function getWaitingHudStatusText(appState: AppState): string {
-  if (!appState.roomState) {
-    return 'Create or join a room';
-  }
-
-  const ownPlayer = appState.slot
-    ? appState.roomState.players.find((player) => player.slot === appState.slot) ?? null
-    : null;
-
-  if (!ownPlayer) {
-    return 'Share the link and wait for the second pilot.';
-  }
-
-  return ownPlayer.connected
-    ? 'Share the link and wait for the second pilot.'
-    : 'Connected. Waiting for player assignment.';
-}
-
-function isMatchStarted(): boolean {
-  return Boolean(state.roomState && state.roomState.status !== 'waiting');
-}
-
-function shouldShowSetupPanel(): boolean {
-  if (state.setupPanelMode === 'share') {
-    return Boolean(state.roomLink) && !isMatchStarted();
-  }
-
-  return state.setupPanelMode === 'join';
-}
-
-// The side-panel feedback intentionally hides low-value waiting messages because
-// that same information is already visible in the room setup UI and waiting HUD.
-function getVisibleFeedback(): string {
-  if (state.roomState?.status === 'round_over' && hasRequestedRematch()) {
-    return state.roomState.rematchVotes.length === PLAYER_SLOTS.length
-      ? 'Both rematch votes received.'
-      : 'Waiting for the second player to confirm the rematch.';
-  }
-
-  if (state.roomState?.status === 'waiting') {
-    return '';
-  }
-
-  return state.feedback;
-}
-
-function getConnectionTone(): string {
-  if (state.phase === 'connected' && state.roomState?.status === 'waiting') {
-    return 'connection-dot--warn';
-  }
-
-  switch (state.phase) {
-    case 'connected':
-      return 'connection-dot--ok';
-    case 'creating':
-    case 'connecting':
-      return 'connection-dot--warn';
-    case 'idle':
-    case 'error':
-      return 'connection-dot--bad';
-  }
-}
-
-function getConnectionLabel(): string {
-  if (state.phase === 'connected' && state.roomState?.message) {
-    return state.roomState.message.replace(/\.$/, '');
-  }
-
-  switch (state.phase) {
-    case 'connected':
-      return 'Online';
-    case 'creating':
-      return 'Creating';
-    case 'connecting':
-      return 'Connecting';
-    case 'idle':
-    case 'error':
-      return 'Offline';
-  }
-}
-
-function getMatchStatusLabel(): string {
-  if (!state.roomState) {
-    return state.phase === 'connecting' ? 'Connecting' : 'Lobby';
-  }
-
-  switch (state.roomState.status) {
-    case 'waiting':
-      return 'Lobby';
-    case 'active':
-      return 'In Flight';
-    case 'round_over':
-      return 'Round Over';
-  }
-}
-
-function getMatchStatusTone(): string {
-  if (!state.roomState || state.roomState.status === 'waiting') {
-    return 'vs-state--waiting';
-  }
-
-  return state.roomState.status === 'round_over' ? 'vs-state--over' : 'vs-state--live';
-}
-
-// Room cards are mounted once and then updated in place to avoid unnecessary DOM
-// churn during active-round state syncs.
-function renderPlayerList(): void {
-  const players = state.roomState?.players ?? PLAYER_SLOTS.map((slot) => ({
-    slot,
-    connected: false,
-    wins: 0,
-    plane: {
-      phase: 'parked' as PlanePhase
-    }
-  }));
-
-  for (const player of players) {
-    const refs = playerCardRefs.get(player.slot);
-    if (!refs) {
-      continue;
-    }
-
-    refs.item.classList.toggle('is-current', player.slot === state.slot);
-    refs.side.textContent = player.slot === 'left' ? '◀ Left Pilot' : 'Right Pilot ▶';
-    refs.name.textContent = getPilotName(player);
-    refs.detail.textContent = getPlayerCardDetail(player);
-    refs.statusDot.className = `connection-dot ${player.connected ? 'connection-dot--ok' : 'connection-dot--bad'}`;
-    refs.score.textContent = String(player.wins).padStart(2, '0');
-    refs.resourceGroup.hidden = !(player.slot === state.slot && state.roomState?.status === 'active');
-    refs.ammoValue.textContent = '78%';
-    refs.fuelValue.textContent = '10%';
-    refs.hullValue.textContent = '84%';
-    refs.ammoFill.style.width = '78%';
-    refs.fuelFill.style.width = '10%';
-    refs.hullFill.style.width = '84%';
-  }
-}
-
-function createPlayerCard(slot: PlayerSlot): PlayerCardRefs {
-  const item = document.createElement('li');
-  item.className = `player-card player-card--${slot}`;
-
-  const avatarWrap = document.createElement('div');
-  avatarWrap.className = 'player-avatar';
-
-  const avatar = document.createElement('img');
-  avatar.src = `/images/${DEFAULT_PLANE_CONFIG[slot].planeImage}`;
-  avatar.alt = `${formatSlot(slot)} pilot`;
-  avatarWrap.append(avatar);
-
-  const main = document.createElement('div');
-  main.className = 'player-main';
-
-  const side = document.createElement('span');
-  side.className = 'player-side';
-  side.textContent = slot === 'left' ? '◀ Left Pilot' : 'Right Pilot ▶';
-
-  const name = document.createElement('span');
-  name.className = 'player-name';
-  name.textContent = slot === 'left' ? 'Pilot Alpha' : 'Pilot Bravo';
-
-  const detailRow = document.createElement('div');
-  detailRow.className = 'player-status-row';
-
-  const statusDot = document.createElement('span');
-  statusDot.className = 'connection-dot connection-dot--bad';
-
-  const detail = document.createElement('span');
-  detail.className = 'player-detail';
-  detail.textContent = 'Seat open for another pilot';
-
-  detailRow.append(statusDot, detail);
-  main.append(side, name, detailRow);
-
-  const score = document.createElement('span');
-  score.className = 'player-score';
-  score.textContent = '00';
-
-  const resourceGroup = document.createElement('div');
-  resourceGroup.className = 'player-resources';
-  resourceGroup.hidden = true;
-
-  const ammo = createResourceBlock('Ammo', 'resource-fill--ammo');
-  const fuel = createResourceBlock('Fuel', 'resource-fill--fuel');
-  const hull = createResourceBlock('Hull', 'resource-fill--hull');
-  resourceGroup.append(ammo.block, fuel.block, hull.block);
-
-  item.append(avatarWrap, main, score, resourceGroup);
-
-  return {
-    item,
-    avatar,
-    side,
-    name,
-    detail,
-    score,
-    statusDot,
-    resourceGroup,
-    ammoValue: ammo.value,
-    fuelValue: fuel.value,
-    hullValue: hull.value,
-    ammoFill: ammo.fill,
-    fuelFill: fuel.fill,
-    hullFill: hull.fill
-  };
-}
-
-function createResourceBlock(label: string, fillClassName: string): {
-  block: HTMLDivElement;
-  value: HTMLSpanElement;
-  fill: HTMLSpanElement;
-} {
-  const block = document.createElement('div');
-  block.className = 'resource-block';
-
-  const labelRow = document.createElement('div');
-  labelRow.className = 'resource-label-row';
-
-  const name = document.createElement('span');
-  name.className = 'resource-name';
-  name.textContent = label;
-
-  const value = document.createElement('span');
-  value.className = 'resource-value';
-  value.textContent = '0%';
-
-  const track = document.createElement('div');
-  track.className = 'resource-track';
-
-  const fill = document.createElement('span');
-  fill.className = `resource-fill ${fillClassName}`;
-  fill.style.width = '0%';
-
-  labelRow.append(name, value);
-  track.append(fill);
-  block.append(labelRow, track);
-
-  return { block, value, fill };
-}
-
-function getPilotName(player: Pick<PlayerState, 'slot' | 'connected'>): string {
-  if (!player.connected && player.slot !== state.slot) {
-    return 'Awaiting Pilot';
-  }
-
-  return player.slot === 'left' ? 'Pilot Alpha' : 'Pilot Bravo';
-}
-
-function getPlayerCardDetail(player: {
-  connected: boolean;
-  plane: {
-    phase: PlanePhase;
-    position?: { y: number };
-  };
-}): string {
-  if (!player.connected) {
-    return 'Seat open for another pilot';
-  }
-
-  switch (player.plane.phase) {
-    case 'parked':
-      return 'On runway';
-    case 'runway':
-      return 'Runway roll';
-    case 'airborne':
-      return `Airborne · alt ${Math.max(0, Math.round(GROUND_CONTACT_Y - (player.plane.position?.y ?? GROUND_CONTACT_Y)))}`;
-    case 'stall':
-      return 'Stall recovery';
-    case 'landing':
-      return 'Landing run';
-    case 'destroyed':
-      return 'Destroyed';
-  }
-}
-
-// URL state is kept in sync with the current room id so refresh and share-link
-// flows continue to work without extra routing infrastructure.
+// URL state stays in sync with the active room id so refresh and room reconnect
+// flows work without extra routing infrastructure.
 function setRoom(roomId: string | null): void {
   state.roomId = roomId;
-  state.roomLink = roomId ? `${window.location.origin}/?room=${roomId}` : null;
 
   const url = new URL(window.location.href);
   if (roomId) {
@@ -1595,12 +878,9 @@ function setRoom(roomId: string | null): void {
   window.history.replaceState(null, '', url);
 }
 
-function resetRoomView(feedback: string): void {
+function resetRoomRuntime(): void {
   state.slot = null;
   state.roomState = null;
-  state.phase = 'error';
-  state.feedback = feedback;
-  state.setupPanelMode = 'join';
   setRoom(null);
   clearRoomSnapshots();
 }
@@ -1655,18 +935,17 @@ function resetLocalInput(): void {
 }
 
 // WebSocket lifecycle section.
-// Connection state is explicit so the setup panel can react cleanly during
-// create, join, reconnect, and disconnect flows.
+// Runtime connection state stays explicit so reconnect and disconnect handling
+// remain predictable.
 function connectToRoom(roomId: string): void {
   closeCurrentSocket();
   setRoom(roomId);
 
   state.slot = null;
   state.roomState = null;
-  state.phase = 'connecting';
-  state.feedback = 'Opening match…';
   localInput = createDefaultInputState();
   clearRoomSnapshots();
+  ui.setConnecting(roomId);
   render();
 
   const nextSocket = new WebSocket(buildWebSocketUrl(roomId));
@@ -1677,8 +956,7 @@ function connectToRoom(roomId: string): void {
       return;
     }
 
-    state.phase = 'connected';
-    state.feedback = 'Connected. Waiting for the round state.';
+    ui.setConnected();
     render();
   });
 
@@ -1698,14 +976,7 @@ function connectToRoom(roomId: string): void {
 
     socket = null;
     localInput = createDefaultInputState();
-
-    if (state.phase !== 'error') {
-      state.phase = 'error';
-      state.feedback = state.roomId
-        ? `The connection for room ${state.roomId} closed.`
-        : 'The room connection closed.';
-    }
-
+    ui.setConnectionClosed(state.roomId);
     render();
   });
 }
@@ -1718,24 +989,14 @@ function handleServerMessage(message: ServerMessage): void {
       setRoom(message.payload.roomId);
       saveReconnectToken(message.payload.roomId, message.payload.reconnectToken);
       state.slot = message.payload.slot;
-      state.feedback = `You are flying on the ${formatSlot(message.payload.slot).toLowerCase()} side.`;
+      ui.setAssignedSlot(message.payload.slot);
       resetLocalInput();
       render();
       return;
 
     case 'room_state':
       setCurrentRoomState(message.payload);
-      state.phase = 'connected';
-      if (message.payload.status === 'waiting') {
-        state.feedback = '';
-      } else if (message.payload.message) {
-        state.feedback = message.payload.message;
-      } else if (message.payload.status === 'round_over') {
-        state.feedback = 'Round complete.';
-        resetLocalInput();
-      } else {
-        state.feedback = 'Live round synchronized from the server.';
-      }
+      ui.syncRoomStateFeedback(message.payload);
 
       if (message.payload.status === 'round_over' || message.payload.status === 'waiting') {
         resetLocalInput();
@@ -1746,7 +1007,8 @@ function handleServerMessage(message: ServerMessage): void {
 
     case 'error':
       closeCurrentSocket();
-      resetRoomView(mapErrorMessage(message.payload.code, message.payload.message));
+      resetRoomRuntime();
+      ui.setConnectionError(mapErrorMessage(message.payload.code, message.payload.message));
       render();
   }
 }
@@ -1766,69 +1028,8 @@ function mapErrorMessage(code: ServerErrorCode, fallbackMessage: string): string
   }
 }
 
-function formatSlot(slot: PlayerSlot): string {
-  return slot === 'left' ? 'Left' : 'Right';
-}
-
-function formatPhase(phase: PlanePhase): string {
-  switch (phase) {
-    case 'parked':
-      return 'On runway';
-    case 'runway':
-      return 'Rolling';
-    case 'airborne':
-      return 'Airborne';
-    case 'stall':
-      return 'Stall';
-    case 'landing':
-      return 'Landing';
-    case 'destroyed':
-      return 'Destroyed';
-  }
-}
-
-function getRoundResultText(roomState: RoomState, slot: PlayerSlot | null): string {
-  if (roomState.winner === 'draw') {
-    return 'Draw';
-  }
-
-  if (roomState.winner === 'left_win') {
-    return slot === 'left' ? 'You win' : 'Left pilot wins';
-  }
-
-  if (roomState.winner === 'right_win') {
-    return slot === 'right' ? 'You win' : 'Right pilot wins';
-  }
-
-  return 'Round complete';
-}
-
-// Round-over copy depends on the local viewer's rematch vote, so it is derived
-// from the full app state rather than only from the room payload.
-function getRoundOverlayMessage(appState: AppState): string {
-  if (!appState.roomState) {
-    return 'Both pilots must request rematch.';
-  }
-
-  if (hasRequestedRematchFor(appState)) {
-    return appState.roomState.rematchVotes.length === PLAYER_SLOTS.length
-      ? 'Both pilots confirmed the rematch.'
-      : 'Waiting for the second player to confirm the rematch.';
-  }
-
-  return getRematchPromptMessage(
-    appState.roomState.message ?? 'Both pilots must request rematch.'
-  );
-}
-
 function hasRequestedRematch(): boolean {
-  return hasRequestedRematchFor(state);
-}
-
-// Stateless helper used when overlay/feedback logic needs the same rematch-vote
-// answer without hard-wiring itself to the module-global state object.
-function hasRequestedRematchFor(appState: Pick<AppState, 'slot' | 'roomState'>): boolean {
-  return Boolean(appState.slot && appState.roomState?.rematchVotes.includes(appState.slot));
+  return Boolean(state.slot && state.roomState?.rematchVotes.includes(state.slot));
 }
 
 function canRequestRematch(): boolean {
@@ -1842,35 +1043,6 @@ function canRequestRematch(): boolean {
 
   const ownPlayer = state.roomState.players.find((player) => player.slot === state.slot);
   return Boolean(ownPlayer?.connected && !state.roomState.rematchVotes.includes(state.slot));
-}
-
-function getRematchStatusText(): string {
-  if (!state.roomState) {
-    return '';
-  }
-
-  if (state.roomState.status !== 'round_over') {
-    return '';
-  }
-
-  if (!state.slot) {
-    return state.roomState.message ?? 'Waiting for slot assignment.';
-  }
-
-  const votes = state.roomState.rematchVotes.length;
-  if (hasRequestedRematch()) {
-    return votes === PLAYER_SLOTS.length
-      ? 'Both rematch votes received.'
-      : 'Waiting for the second player to confirm the rematch.';
-  }
-
-  return getRematchPromptMessage(
-    state.roomState.message ?? 'Request rematch to start the next round.'
-  );
-}
-
-function getRematchPromptMessage(baseMessage: string): string {
-  return `${baseMessage} Press Y or use Rematch.`;
 }
 
 // Input section.
@@ -2048,169 +1220,6 @@ function isCollisionPolygonArray(value: unknown): value is PlanePoint[][] {
   return Array.isArray(value) && value.every((polygon) => isPlanePointArray(polygon));
 }
 
-// Room setup section.
-// Create, join, and copy-link flows all reuse the same small UI state machine.
-async function createRoom(): Promise<void> {
-  closeCurrentSocket();
-  state.phase = 'creating';
-  state.feedback = 'Creating a new room…';
-  state.setupPanelMode = 'hidden';
-  localInput = createDefaultInputState();
-  render();
-
-  try {
-    const response = await fetch('/api/rooms', {
-      method: 'POST'
-    });
-
-    if (!response.ok) {
-      throw new Error(`Create room failed with status ${response.status}.`);
-    }
-
-    const payload = (await response.json()) as CreateRoomResponse;
-    state.roomLink = payload.joinUrl;
-    state.setupPanelMode = 'share';
-    connectToRoom(payload.roomId);
-  } catch {
-    resetRoomView('Room creation failed. Check the server and try again.');
-    render();
-  }
-}
-
-async function copyRoomLink(): Promise<void> {
-  if (!state.roomLink) {
-    return;
-  }
-
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(state.roomLink);
-    } else {
-      joinRoomInput.focus();
-      joinRoomInput.select();
-      const copied = document.execCommand('copy');
-      joinRoomInput.setSelectionRange(joinRoomInput.value.length, joinRoomInput.value.length);
-      if (!copied) {
-        throw new Error('copy_failed');
-      }
-    }
-
-    state.feedback = 'Join link copied to clipboard.';
-    render();
-  } catch {
-    state.feedback = 'Copy failed. Copy the link manually.';
-    render();
-  }
-}
-
-function showJoinSetup(): void {
-  if (state.phase === 'creating' || state.phase === 'connecting') {
-    return;
-  }
-
-  state.setupPanelMode = 'join';
-  joinRoomInput.value = '';
-  state.feedback = 'Paste a room code or join link.';
-  render();
-  joinRoomInput.focus();
-}
-
-function hideSetupPanel(): void {
-  state.setupPanelMode = 'hidden';
-  render();
-}
-
-function renderShareCode(roomId: string | null): void {
-  shareRoomCode.replaceChildren();
-
-  if (!roomId) {
-    return;
-  }
-
-  for (const character of roomId) {
-    const digit = document.createElement('span');
-    digit.className = 'share-code-display__digit';
-    digit.textContent = character;
-    shareRoomCode.append(digit);
-  }
-}
-
-// Global event wiring is kept at the bottom so the file reads top-down:
-// helpers first, then lifecycle bootstrap.
-createRoomButton.addEventListener('click', () => {
-  void createRoom();
-});
-
-secondaryActionButton.addEventListener('click', () => {
-  showJoinSetup();
-});
-
-copyLinkButton.addEventListener('click', () => {
-  void copyRoomLink();
-});
-
-rematchButton.addEventListener('click', () => {
-  sendRematchRequest();
-});
-
-setupModalCloseButton.addEventListener('click', () => {
-  hideSetupPanel();
-});
-
-setupModal.addEventListener('click', (event) => {
-  if (event.target === setupModal || event.target instanceof HTMLElement && event.target.classList.contains('setup-modal__backdrop')) {
-    hideSetupPanel();
-  }
-});
-
-document.addEventListener('click', (event) => {
-  if (!controlsMenu.open) {
-    return;
-  }
-
-  if (event.target instanceof Node && !controlsMenu.contains(event.target)) {
-    controlsMenu.open = false;
-  }
-});
-
-shareCopyLinkButton.addEventListener('click', () => {
-  void copyRoomLink();
-});
-
-shareCopyCodeButton.addEventListener('click', async () => {
-  if (!state.roomId) {
-    return;
-  }
-
-  try {
-    await navigator.clipboard.writeText(state.roomId);
-    state.feedback = 'Room code copied to clipboard.';
-  } catch {
-    state.feedback = 'Copy failed. Copy the room code manually.';
-  }
-
-  render();
-});
-
-setupForm.addEventListener('submit', (event) => {
-  event.preventDefault();
-
-  const roomId = extractRoomId(joinRoomInput.value);
-  if (!roomId) {
-    resetRoomView(`Enter a ${ROOM_ID_LENGTH}-character room id or a link containing ?room=.`);
-    state.setupPanelMode = 'join';
-    render();
-    return;
-  }
-
-  hideSetupPanel();
-  connectToRoom(roomId);
-});
-
-planeGeometryEditor.addEventListener('input', () => {
-  applyPlaneGeometryDraft(planeGeometryEditor.value);
-});
-
 window.addEventListener('keydown', (event) => {
   handleGameplayKey(event, true);
 });
@@ -2230,33 +1239,9 @@ window.addEventListener('beforeunload', () => {
   closeCurrentSocket();
 });
 
-buildTelemetry(planeTelemetryContainer);
-buildNumericEditor(
-  planeStatsContainer,
-  'Plane',
-  PLANE_STATS_FIELDS,
-  editablePlaneStats,
-  statsInputs,
-  (slot, key, value) => {
-    editablePlaneStats[slot] = { ...editablePlaneStats[slot], [key]: value };
-    sendPlaneStats(slot);
-  }
-);
-buildSpawnEditor(runwayConfigContainer);
-buildNumericEditor(
-  runwayConfigContainer,
-  'Runway',
-  RUNWAY_CONFIG_FIELDS,
-  editableRunwayConfig,
-  runwayInputs,
-  (slot, key, value) => {
-    editableRunwayConfig[slot] = { ...editableRunwayConfig[slot], [key]: value };
-  }
-);
 render();
 window.requestAnimationFrame(drawFrame);
 
 if (initialRoomId) {
-  joinRoomInput.value = `${window.location.origin}/?room=${initialRoomId}`;
   connectToRoom(initialRoomId);
 }

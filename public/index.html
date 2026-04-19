@@ -37,12 +37,6 @@
               </button>
             </div>
 
-            <div id="rematch-row" class="action-row topbar-action-row" hidden>
-              <button id="rematch-button" class="button button-green" type="button">
-                Rematch
-              </button>
-            </div>
-
             <div class="action-row topbar-action-row">
               <button id="create-room-button" class="button button-primary" type="button">
                 New Match
@@ -117,8 +111,20 @@
                   <button id="share-copy-link-button" class="button button-primary" type="button">Copy Link</button>
                   <button id="share-copy-code-button" class="button" type="button">Copy Code</button>
                 </div>
+                <p id="setup-feedback" class="feedback" hidden></p>
               </div>
             </div>
+          </div>
+
+          <div id="round-result-panel" class="round-result-panel" hidden>
+            <h2 id="round-result-title">Round complete</h2>
+            <div class="round-result-actions">
+              <p class="round-result-hint">
+                Press <kbd class="shortcut-key">Y</kbd> to fly again.
+              </p>
+              <button id="rematch-button" class="button button-green" type="button">Rematch</button>
+            </div>
+            <p id="round-result-copy">Both pilots must request rematch.</p>
           </div>
         </div>
       </div>
