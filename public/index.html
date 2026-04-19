@@ -4,96 +4,171 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Air Duel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Jersey+15&family=Outfit:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <div id="app">
-      <header class="page-header">
-        <h1>Air Duel</h1>
-        <p class="intro">
-          Share a link, take off from opposite airfields, and duel until one
-          pilot wins the round.
-        </p>
-      </header>
+    <div class="bg-cloud" style="left: 3%; top: 6%; width: 180px; height: 58px"></div>
+    <div class="bg-cloud" style="right: 5%; top: 12%; width: 220px; height: 70px"></div>
+    <div class="bg-cloud" style="left: 34%; top: 2%; width: 148px; height: 48px; opacity: 0.62"></div>
 
-      <main class="layout">
-        <section class="panel panel-large">
-          <h2>Battlefield</h2>
-          <div id="canvas-root" class="canvas-root"></div>
-        </section>
+    <div id="app" class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand__mark">AD</div>
+          <div>
+            <div class="brand__name">Air Duel</div>
+            <div class="brand__tag">1v1 biplane dogfight</div>
+          </div>
+        </div>
 
-        <section class="panel panel-stack">
-          <div class="panel-block">
-            <h2>Match Setup</h2>
-            <div class="action-row">
+        <div class="topbar__center">
+          <div class="topbar-actions">
+            <div id="room-strip" class="room-strip" hidden>
+              <span class="room-strip__label">Room</span>
+              <span id="room-code-display" class="room-strip__code">------</span>
+              <button id="copy-link-button" class="button button-share button-share--small" type="button">
+                Copy Link
+              </button>
+            </div>
+
+            <div id="rematch-row" class="action-row topbar-action-row" hidden>
+              <button id="rematch-button" class="button button-green" type="button">
+                Rematch
+              </button>
+            </div>
+
+            <div class="action-row topbar-action-row">
               <button id="create-room-button" class="button button-primary" type="button">
-                Create Match
+                New Match
               </button>
               <button id="secondary-action-button" class="button button-secondary" type="button">
                 Join by Code
               </button>
             </div>
-            <div id="rematch-row" class="action-row" hidden>
-              <button id="rematch-button" class="button button-green button-full" type="button">
-                Rematch
-              </button>
+          </div>
+        </div>
+
+        <div class="topbar__right">
+          <div class="connection-state">
+            <span id="connection-dot" class="connection-dot connection-dot--bad" aria-hidden="true"></span>
+            <span id="connection-label">Offline</span>
+          </div>
+
+          <details class="controls-menu">
+            <summary class="controls-toggle" aria-label="Show controls">?</summary>
+
+            <div class="controls-popover">
+              <h2>Controls</h2>
+              <ul class="controls-popover__list">
+                <li><code>Space</code><span>Start runway roll</span></li>
+                <li><code>↑</code><span>Lift off &amp; pitch up</span></li>
+                <li><code>↓</code><span>Pitch down</span></li>
+                <li><code>Ctrl</code><span>Fire (hold)</span></li>
+                <li><code>Y</code><span>Rematch after round</span></li>
+              </ul>
+            </div>
+          </details>
+        </div>
+      </header>
+
+      <div id="setup-modal" class="setup-modal" hidden>
+        <div class="setup-modal__backdrop"></div>
+        <div class="setup-modal__dialog">
+          <button id="setup-modal-close" class="setup-modal__close" type="button" aria-label="Close">×</button>
+          <h2 id="setup-modal-title">Join Match</h2>
+          <p id="setup-modal-copy" class="setup-modal__copy">
+            Got a code from another pilot? Enter it below to take the open seat.
+          </p>
+
+          <form id="setup-form" class="setup-strip">
+            <label id="setup-field-label" class="field-label" for="join-room-input">
+              Paste code or join link
+            </label>
+            <div class="join-row">
+              <input
+                id="join-room-input"
+                class="text-input"
+                type="text"
+                autocomplete="off"
+                placeholder="Paste code or join link"
+              />
+              <button id="setup-submit-button" class="button button-share" type="submit">Join</button>
+            </div>
+            <p id="setup-error" class="setup-error" aria-live="polite" hidden></p>
+          </form>
+
+          <div id="share-panel" class="share-panel" hidden>
+            <div class="share-panel__section">
+              <span class="field-label">Room Code</span>
+              <div id="share-room-code" class="share-code-display"></div>
             </div>
 
-            <form id="setup-form" class="join-form" hidden>
-              <label id="setup-field-label" class="field-label" for="join-room-input">
-                Paste code or join link
-              </label>
-              <div class="join-row">
-                <input
-                  id="join-room-input"
-                  class="text-input"
-                  type="text"
-                  autocomplete="off"
-                  placeholder="Paste code or join link"
-                />
-                <button id="setup-submit-button" class="button" type="submit">Join</button>
+            <div class="share-panel__section">
+              <span class="field-label">Share Link</span>
+              <div class="share-link-card">
+                <p id="share-link-text" class="share-link-text"></p>
+                <div class="share-link-actions">
+                  <button id="share-copy-link-button" class="button button-primary" type="button">Copy Link</button>
+                  <button id="share-copy-code-button" class="button" type="button">Copy Code</button>
+                </div>
               </div>
-            </form>
-
-            <p id="session-feedback" class="feedback" aria-live="polite"></p>
+            </div>
           </div>
+        </div>
+      </div>
 
-          <div class="panel-block">
-            <ul id="player-list" class="player-list"></ul>
-            <p id="rematch-status" class="feedback" aria-live="polite"></p>
-          </div>
-
-          <div id="plane-debug-panel" class="panel-block" hidden>
-            <h2>Plane Debug</h2>
-            <div id="plane-telemetry" class="telemetry-grid"></div>
-            <p class="debug-copy">
-              Double-press <code>X</code> to toggle the plane grid. Edit the geometry JSON or tweak per-plane stats below — changes take effect live.
-            </p>
-            <label class="field-label" for="plane-geometry-editor">Plane geometry JSON</label>
-            <textarea
-              id="plane-geometry-editor"
-              class="debug-textarea"
-              spellcheck="false"
-            ></textarea>
-            <p id="plane-geometry-feedback" class="feedback" aria-live="polite"></p>
-            <p class="debug-section-heading">Plane stats</p>
-            <div id="plane-stats-container"></div>
-            <p class="debug-section-heading">Runway config</p>
-            <div id="runway-config-container"></div>
-          </div>
-
-          <div class="panel-block">
-            <h2>Controls</h2>
-            <ul class="controls-list">
-              <li><strong>Start roll:</strong> press <code>Space</code> or <code>Enter</code></li>
-              <li><strong>Lift off:</strong> hold <code>ArrowUp</code> after a short runway roll</li>
-              <li><strong>Pitch:</strong> use <code>ArrowUp</code> and <code>ArrowDown</code> in the air</li>
-              <li><strong>Fire:</strong> hold <code>Control</code></li>
-              <li><strong>Replay:</strong> press <code>Y</code> or use Rematch after a round ends</li>
-            </ul>
+      <main class="main-shell">
+        <section class="battle-card">
+          <div class="battle-card__frame">
+            <div id="canvas-root" class="canvas-root"></div>
           </div>
         </section>
       </main>
+
+      <section class="scoreboard-panel">
+        <div class="matchup-board">
+          <ul id="player-list" class="player-list"></ul>
+
+          <section class="vs-panel" aria-label="Round status">
+            <p id="match-round" class="vs-round">Round 1</p>
+            <div class="vs-glyph">VS</div>
+            <p id="match-status" class="vs-state">Lobby</p>
+          </section>
+        </div>
+
+        <div id="plane-debug-panel" class="debug-panel" hidden>
+          <div class="debug-panel__header">
+            <div>
+              <h2>Plane Debug</h2>
+              <p class="debug-copy">
+                Double-press <code>X</code> to toggle the plane grid. Edit geometry or tune per-plane values live.
+              </p>
+            </div>
+          </div>
+
+          <div id="plane-telemetry" class="telemetry-grid"></div>
+
+          <label class="field-label" for="plane-geometry-editor">Plane geometry JSON</label>
+          <textarea
+            id="plane-geometry-editor"
+            class="debug-textarea"
+            spellcheck="false"
+          ></textarea>
+          <p id="plane-geometry-feedback" class="feedback" aria-live="polite"></p>
+
+          <p class="debug-section-heading">Plane stats</p>
+          <div id="plane-stats-container"></div>
+
+          <p class="debug-section-heading">Runway config</p>
+          <div id="runway-config-container"></div>
+        </div>
+      </section>
     </div>
 
     <script type="module" src="/client/main.js"></script>

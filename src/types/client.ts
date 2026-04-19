@@ -21,12 +21,19 @@ export interface RoomSnapshot {
 
 export interface PlayerCardRefs {
   item: HTMLLIElement;
-  scoreCluster: HTMLDivElement;
-  scoreCircle: HTMLSpanElement;
-  crown: HTMLSpanElement;
-  badge: HTMLSpanElement;
-  marker: HTMLSpanElement;
+  avatar: HTMLImageElement;
+  side: HTMLSpanElement;
+  name: HTMLSpanElement;
   detail: HTMLSpanElement;
+  score: HTMLSpanElement;
+  statusDot: HTMLSpanElement;
+  resourceGroup: HTMLDivElement;
+  ammoValue: HTMLSpanElement;
+  fuelValue: HTMLSpanElement;
+  hullValue: HTMLSpanElement;
+  ammoFill: HTMLSpanElement;
+  fuelFill: HTMLSpanElement;
+  hullFill: HTMLSpanElement;
 }
 
 export interface CloudPuff {

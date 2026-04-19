@@ -559,21 +559,89 @@ function drawBullet(context: CanvasRenderingContext2D, bullet: BulletState): voi
 function drawRoundResult(context: CanvasRenderingContext2D, appState: AppState, roomState: RoomState): void {
   const resultLine = getRoundResultText(roomState, appState.slot);
   const subLine = getRoundOverlayMessage(appState);
-  const boxWidth = 560;
-  const boxHeight = 148;
+  const boxWidth = 640;
+  const boxHeight = 146;
   const boxX = Math.round((GAME_WIDTH - boxWidth) / 2);
-  const boxY = Math.round(GAME_HEIGHT * 0.285);
-  const textX = boxX + 36;
+  const boxY = Math.round(GAME_HEIGHT * 0.29);
+  const textX = boxX + 38;
+  const hasRequestedRematch = hasRequestedRematchFor(appState);
 
   context.fillStyle = 'rgba(14, 26, 38, 0.74)';
   context.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
-  context.fillStyle = '#fff9ef';
-  context.fillRect(boxX, boxY, boxWidth, boxHeight);
-  context.fillStyle = '#15314b';
-  context.font = '700 36px "Trebuchet MS", sans-serif';
-  context.fillText(resultLine, textX, boxY + 59);
-  context.font = '18px "Trebuchet MS", sans-serif';
-  drawWrappedText(context, subLine, textX, boxY + 97, boxWidth - 72, 24);
+  drawRoundedRect(context, boxX, boxY, boxWidth, boxHeight, 18, '#fffaf0');
+  context.strokeStyle = 'rgba(217, 205, 174, 0.9)';
+  context.lineWidth = 2;
+  strokeRoundedRect(context, boxX, boxY, boxWidth, boxHeight, 18);
+
+  context.fillStyle = '#35508a';
+  context.font = '700 42px "Trebuchet MS", sans-serif';
+  context.fillText(resultLine, textX, boxY + 60);
+
+  if (hasRequestedRematch) {
+    context.fillStyle = '#5c6585';
+    context.font = '20px "Trebuchet MS", sans-serif';
+    drawWrappedText(context, subLine, textX, boxY + 108, boxWidth - 76, 28);
+  } else {
+    drawRematchPromptLine(context, textX, boxY + 108);
+  }
+}
+
+function drawRematchPromptLine(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number
+): void {
+  context.fillStyle = '#5c6585';
+  context.font = '20px "Trebuchet MS", sans-serif';
+  context.textBaseline = 'middle';
+
+  context.fillText('Press', x, y);
+
+  const keyX = x + context.measureText('Press').width + 14;
+  drawRoundedRect(context, keyX, y - 17, 32, 34, 8, '#fbf2de');
+  context.strokeStyle = '#d9cdae';
+  context.lineWidth = 2;
+  strokeRoundedRect(context, keyX, y - 17, 32, 34, 8);
+  context.fillStyle = '#5c6585';
+  context.font = '700 21px "Trebuchet MS", sans-serif';
+  context.fillText('Y', keyX + 10, y + 1);
+
+  const tailX = keyX + 44;
+  context.fillStyle = '#5c6585';
+  context.font = '20px "Trebuchet MS", sans-serif';
+  context.fillText('or tap Rematch to fly again.', tailX, y);
+}
+
+function drawRoundedRect(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+  fillStyle: string | CanvasGradient
+): void {
+  context.save();
+  context.beginPath();
+  context.roundRect(x, y, width, height, radius);
+  context.fillStyle = fillStyle;
+  context.fill();
+  context.restore();
+}
+
+function strokeRoundedRect(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number
+): void {
+  context.save();
+  context.beginPath();
+  context.roundRect(x, y, width, height, radius);
+  context.stroke();
+  context.restore();
 }
 
 // Simple canvas word-wrapping helper reused by the waiting HUD and the
@@ -618,15 +686,31 @@ function drawWrappedText(
 const canvasRoot = requireElement<HTMLDivElement>('#canvas-root');
 const createRoomButton = requireElement<HTMLButtonElement>('#create-room-button');
 const secondaryActionButton = requireElement<HTMLButtonElement>('#secondary-action-button');
+const roomStrip = requireElement<HTMLDivElement>('#room-strip');
+const roomCodeDisplay = requireElement<HTMLSpanElement>('#room-code-display');
+const copyLinkButton = requireElement<HTMLButtonElement>('#copy-link-button');
+const controlsMenu = requireElement<HTMLDetailsElement>('.controls-menu');
 const rematchRow = requireElement<HTMLDivElement>('#rematch-row');
 const rematchButton = requireElement<HTMLButtonElement>('#rematch-button');
+const setupModal = requireElement<HTMLDivElement>('#setup-modal');
+const setupModalTitle = requireElement<HTMLHeadingElement>('#setup-modal-title');
+const setupModalCopy = requireElement<HTMLParagraphElement>('#setup-modal-copy');
+const setupModalCloseButton = requireElement<HTMLButtonElement>('#setup-modal-close');
 const setupForm = requireElement<HTMLFormElement>('#setup-form');
+const sharePanel = requireElement<HTMLDivElement>('#share-panel');
+const shareRoomCode = requireElement<HTMLDivElement>('#share-room-code');
+const shareLinkText = requireElement<HTMLParagraphElement>('#share-link-text');
+const shareCopyLinkButton = requireElement<HTMLButtonElement>('#share-copy-link-button');
+const shareCopyCodeButton = requireElement<HTMLButtonElement>('#share-copy-code-button');
 const setupFieldLabel = requireElement<HTMLLabelElement>('#setup-field-label');
 const joinRoomInput = requireElement<HTMLInputElement>('#join-room-input');
 const setupSubmitButton = requireElement<HTMLButtonElement>('#setup-submit-button');
-const feedbackElement = requireElement<HTMLParagraphElement>('#session-feedback');
+const setupErrorElement = requireElement<HTMLParagraphElement>('#setup-error');
+const connectionDotElement = requireElement<HTMLSpanElement>('#connection-dot');
+const connectionLabelElement = requireElement<HTMLSpanElement>('#connection-label');
 const playerListElement = requireElement<HTMLUListElement>('#player-list');
-const rematchStatusElement = requireElement<HTMLParagraphElement>('#rematch-status');
+const matchRoundElement = requireElement<HTMLParagraphElement>('#match-round');
+const matchStatusElement = requireElement<HTMLParagraphElement>('#match-status');
 const planeDebugPanel = requireElement<HTMLDivElement>('#plane-debug-panel');
 const planeTelemetryContainer = requireElement<HTMLDivElement>('#plane-telemetry');
 const planeGeometryEditor = requireElement<HTMLTextAreaElement>('#plane-geometry-editor');
@@ -927,30 +1011,53 @@ function syncSpawnInputs(): void {
 function render(): void {
   const isBusy = state.phase === 'creating' || state.phase === 'connecting';
   createRoomButton.disabled = isBusy;
-
   secondaryActionButton.disabled = isBusy;
 
-  const rematchVisible = isMatchStarted();
+  const rematchVisible = state.roomState?.status === 'round_over';
   rematchRow.hidden = !rematchVisible;
   rematchButton.textContent = hasRequestedRematch() ? 'Rematch Requested' : 'Rematch';
   rematchButton.disabled = !canRequestRematch();
+  roomStrip.hidden = !state.roomId;
+  roomCodeDisplay.textContent = state.roomId ?? '------';
+  copyLinkButton.disabled = !state.roomLink;
 
   const setupVisible = shouldShowSetupPanel();
-  setupForm.hidden = !setupVisible;
+  setupModal.hidden = !setupVisible;
 
   if (setupVisible) {
     const shareMode = state.setupPanelMode === 'share';
-    setupFieldLabel.textContent = shareMode ? 'Share this link' : 'Paste code or join link';
-    joinRoomInput.readOnly = shareMode;
-    joinRoomInput.placeholder = 'Paste code or join link';
-    joinRoomInput.value = shareMode ? state.roomLink ?? '' : joinRoomInput.value;
-    setupSubmitButton.textContent = shareMode ? 'Copy to Clipboard' : 'Join';
-    setupSubmitButton.disabled = isBusy || (shareMode ? !state.roomLink : false);
+    setupForm.dataset.mode = shareMode ? 'share' : 'join';
+    setupForm.hidden = shareMode;
+    sharePanel.hidden = !shareMode;
+    setupModalTitle.textContent = shareMode ? 'Match Ready' : 'Join Match';
+    setupModalCopy.textContent = shareMode
+      ? 'Room created. Share the link below with another pilot.'
+      : 'Got a code from another pilot? Enter it below to take the open seat.';
+    if (shareMode) {
+      renderShareCode(state.roomId);
+      shareLinkText.textContent = state.roomLink ?? '';
+      shareCopyLinkButton.disabled = !state.roomLink;
+      shareCopyCodeButton.disabled = !state.roomId;
+    } else {
+      setupFieldLabel.textContent = 'Paste code or join link';
+      joinRoomInput.readOnly = false;
+      joinRoomInput.placeholder = 'Paste code or join link';
+      setupSubmitButton.textContent = 'Join';
+      setupSubmitButton.disabled = isBusy;
+      const shouldShowSetupError = state.phase === 'error' && state.feedback !== '';
+      setupErrorElement.hidden = !shouldShowSetupError;
+      setupErrorElement.textContent = shouldShowSetupError ? state.feedback : '';
+    }
+  } else {
+    setupErrorElement.hidden = true;
+    setupErrorElement.textContent = '';
   }
 
-  feedbackElement.textContent = getVisibleFeedback();
-  feedbackElement.hidden = feedbackElement.textContent === '';
-  rematchStatusElement.textContent = getRematchStatusText();
+  connectionDotElement.className = `connection-dot ${getConnectionTone()}`;
+  connectionLabelElement.textContent = getConnectionLabel();
+  matchRoundElement.textContent = state.roomState ? `Round ${state.roomState.round}` : 'Round 1';
+  matchStatusElement.textContent = getMatchStatusLabel();
+  matchStatusElement.className = `vs-state ${getMatchStatusTone()}`;
   planeDebugPanel.hidden = !showPlaneGrid;
   if (document.activeElement !== planeGeometryEditor && planeGeometryEditor.value !== planeGeometryDraft) {
     planeGeometryEditor.value = planeGeometryDraft;
@@ -1243,6 +1350,64 @@ function getVisibleFeedback(): string {
   return state.feedback;
 }
 
+function getConnectionTone(): string {
+  if (state.phase === 'connected' && state.roomState?.status === 'waiting') {
+    return 'connection-dot--warn';
+  }
+
+  switch (state.phase) {
+    case 'connected':
+      return 'connection-dot--ok';
+    case 'creating':
+    case 'connecting':
+      return 'connection-dot--warn';
+    case 'idle':
+    case 'error':
+      return 'connection-dot--bad';
+  }
+}
+
+function getConnectionLabel(): string {
+  if (state.phase === 'connected' && state.roomState?.message) {
+    return state.roomState.message.replace(/\.$/, '');
+  }
+
+  switch (state.phase) {
+    case 'connected':
+      return 'Online';
+    case 'creating':
+      return 'Creating';
+    case 'connecting':
+      return 'Connecting';
+    case 'idle':
+    case 'error':
+      return 'Offline';
+  }
+}
+
+function getMatchStatusLabel(): string {
+  if (!state.roomState) {
+    return state.phase === 'connecting' ? 'Connecting' : 'Lobby';
+  }
+
+  switch (state.roomState.status) {
+    case 'waiting':
+      return 'Lobby';
+    case 'active':
+      return 'In Flight';
+    case 'round_over':
+      return 'Round Over';
+  }
+}
+
+function getMatchStatusTone(): string {
+  if (!state.roomState || state.roomState.status === 'waiting') {
+    return 'vs-state--waiting';
+  }
+
+  return state.roomState.status === 'round_over' ? 'vs-state--over' : 'vs-state--live';
+}
+
 // Room cards are mounted once and then updated in place to avoid unnecessary DOM
 // churn during active-round state syncs.
 function renderPlayerList(): void {
@@ -1255,10 +1420,6 @@ function renderPlayerList(): void {
     }
   }));
 
-  const shouldShowScores = players.some((player) => player.wins > 0);
-  const highestWins = Math.max(...players.map((player) => player.wins));
-  const tiedForLead = shouldShowScores && players.filter((player) => player.wins === highestWins).length > 1;
-
   for (const player of players) {
     const refs = playerCardRefs.get(player.slot);
     if (!refs) {
@@ -1266,74 +1427,156 @@ function renderPlayerList(): void {
     }
 
     refs.item.classList.toggle('is-current', player.slot === state.slot);
-    refs.scoreCluster.hidden = !shouldShowScores;
-    refs.scoreCircle.className = `score-circle ${getScoreTone(player.wins, highestWins, tiedForLead)}`;
-    refs.scoreCircle.textContent = String(player.wins);
-    refs.crown.hidden = !(shouldShowScores && player.wins === highestWins && !tiedForLead);
-    refs.badge.textContent = player.connected ? 'Connected' : 'Open';
-    refs.badge.classList.toggle('is-connected', player.connected);
-    refs.marker.textContent = player.slot === state.slot ? 'You' : '';
-    refs.detail.textContent = player.connected
-      ? player.slot === state.slot
-        ? formatPhase(player.plane.phase)
-        : `Pilot present. ${formatPhase(player.plane.phase)}.`
-      : 'Available for another browser to join.';
+    refs.side.textContent = player.slot === 'left' ? '◀ Left Pilot' : 'Right Pilot ▶';
+    refs.name.textContent = getPilotName(player);
+    refs.detail.textContent = getPlayerCardDetail(player);
+    refs.statusDot.className = `connection-dot ${player.connected ? 'connection-dot--ok' : 'connection-dot--bad'}`;
+    refs.score.textContent = String(player.wins).padStart(2, '0');
+    refs.resourceGroup.hidden = !(player.slot === state.slot && state.roomState?.status === 'active');
+    refs.ammoValue.textContent = '78%';
+    refs.fuelValue.textContent = '10%';
+    refs.hullValue.textContent = '84%';
+    refs.ammoFill.style.width = '78%';
+    refs.fuelFill.style.width = '10%';
+    refs.hullFill.style.width = '84%';
   }
 }
 
 function createPlayerCard(slot: PlayerSlot): PlayerCardRefs {
   const item = document.createElement('li');
-  item.className = 'player-card';
+  item.className = `player-card player-card--${slot}`;
 
-  const scoreCluster = document.createElement('div');
-  scoreCluster.className = 'score-cluster';
+  const avatarWrap = document.createElement('div');
+  avatarWrap.className = 'player-avatar';
 
-  const crown = document.createElement('span');
-  crown.className = 'score-crown';
-  crown.hidden = true;
-  crown.setAttribute('aria-hidden', 'true');
+  const avatar = document.createElement('img');
+  avatar.src = `/images/${DEFAULT_PLANE_CONFIG[slot].planeImage}`;
+  avatar.alt = `${formatSlot(slot)} pilot`;
+  avatarWrap.append(avatar);
 
-  const scoreCircle = document.createElement('span');
-  scoreCircle.className = 'score-circle is-trailing';
-  scoreCircle.textContent = '0';
+  const main = document.createElement('div');
+  main.className = 'player-main';
 
-  scoreCluster.append(crown, scoreCircle);
-  scoreCluster.hidden = true;
-
-  const headerRow = document.createElement('div');
-  headerRow.className = 'player-row';
+  const side = document.createElement('span');
+  side.className = 'player-side';
+  side.textContent = slot === 'left' ? '◀ Left Pilot' : 'Right Pilot ▶';
 
   const name = document.createElement('span');
   name.className = 'player-name';
-  name.textContent = `${formatSlot(slot)} pilot`;
+  name.textContent = slot === 'left' ? 'Pilot Alpha' : 'Pilot Bravo';
 
-  const statusStack = document.createElement('div');
-  statusStack.className = 'player-status-stack';
+  const detailRow = document.createElement('div');
+  detailRow.className = 'player-status-row';
 
-  const badge = document.createElement('span');
-  badge.className = 'player-state';
-  badge.textContent = 'Open';
-
-  const marker = document.createElement('span');
-  marker.className = 'player-marker';
+  const statusDot = document.createElement('span');
+  statusDot.className = 'connection-dot connection-dot--bad';
 
   const detail = document.createElement('span');
   detail.className = 'player-detail';
-  detail.textContent = 'Available for another browser to join.';
+  detail.textContent = 'Seat open for another pilot';
 
-  statusStack.append(badge, marker);
-  headerRow.append(name, statusStack);
-  item.append(scoreCluster, headerRow, detail);
+  detailRow.append(statusDot, detail);
+  main.append(side, name, detailRow);
+
+  const score = document.createElement('span');
+  score.className = 'player-score';
+  score.textContent = '00';
+
+  const resourceGroup = document.createElement('div');
+  resourceGroup.className = 'player-resources';
+  resourceGroup.hidden = true;
+
+  const ammo = createResourceBlock('Ammo', 'resource-fill--ammo');
+  const fuel = createResourceBlock('Fuel', 'resource-fill--fuel');
+  const hull = createResourceBlock('Hull', 'resource-fill--hull');
+  resourceGroup.append(ammo.block, fuel.block, hull.block);
+
+  item.append(avatarWrap, main, score, resourceGroup);
 
   return {
     item,
-    scoreCluster,
-    scoreCircle,
-    crown,
-    badge,
-    marker,
-    detail
+    avatar,
+    side,
+    name,
+    detail,
+    score,
+    statusDot,
+    resourceGroup,
+    ammoValue: ammo.value,
+    fuelValue: fuel.value,
+    hullValue: hull.value,
+    ammoFill: ammo.fill,
+    fuelFill: fuel.fill,
+    hullFill: hull.fill
   };
+}
+
+function createResourceBlock(label: string, fillClassName: string): {
+  block: HTMLDivElement;
+  value: HTMLSpanElement;
+  fill: HTMLSpanElement;
+} {
+  const block = document.createElement('div');
+  block.className = 'resource-block';
+
+  const labelRow = document.createElement('div');
+  labelRow.className = 'resource-label-row';
+
+  const name = document.createElement('span');
+  name.className = 'resource-name';
+  name.textContent = label;
+
+  const value = document.createElement('span');
+  value.className = 'resource-value';
+  value.textContent = '0%';
+
+  const track = document.createElement('div');
+  track.className = 'resource-track';
+
+  const fill = document.createElement('span');
+  fill.className = `resource-fill ${fillClassName}`;
+  fill.style.width = '0%';
+
+  labelRow.append(name, value);
+  track.append(fill);
+  block.append(labelRow, track);
+
+  return { block, value, fill };
+}
+
+function getPilotName(player: Pick<PlayerState, 'slot' | 'connected'>): string {
+  if (!player.connected && player.slot !== state.slot) {
+    return 'Awaiting Pilot';
+  }
+
+  return player.slot === 'left' ? 'Pilot Alpha' : 'Pilot Bravo';
+}
+
+function getPlayerCardDetail(player: {
+  connected: boolean;
+  plane: {
+    phase: PlanePhase;
+    position?: { y: number };
+  };
+}): string {
+  if (!player.connected) {
+    return 'Seat open for another pilot';
+  }
+
+  switch (player.plane.phase) {
+    case 'parked':
+      return 'On runway';
+    case 'runway':
+      return 'Runway roll';
+    case 'airborne':
+      return `Airborne · alt ${Math.max(0, Math.round(GROUND_CONTACT_Y - (player.plane.position?.y ?? GROUND_CONTACT_Y)))}`;
+    case 'stall':
+      return 'Stall recovery';
+    case 'landing':
+      return 'Landing run';
+    case 'destroyed':
+      return 'Destroyed';
+  }
 }
 
 // URL state is kept in sync with the current room id so refresh and share-link
@@ -1578,14 +1821,6 @@ function getRoundOverlayMessage(appState: AppState): string {
   );
 }
 
-function getScoreTone(wins: number, highestWins: number, tiedForLead: boolean): string {
-  if (tiedForLead) {
-    return 'is-tied';
-  }
-
-  return wins === highestWins ? 'is-leading' : 'is-trailing';
-}
-
 function hasRequestedRematch(): boolean {
   return hasRequestedRematchFor(state);
 }
@@ -1819,7 +2054,7 @@ async function createRoom(): Promise<void> {
   closeCurrentSocket();
   state.phase = 'creating';
   state.feedback = 'Creating a new room…';
-  state.setupPanelMode = 'share';
+  state.setupPanelMode = 'hidden';
   localInput = createDefaultInputState();
   render();
 
@@ -1834,6 +2069,7 @@ async function createRoom(): Promise<void> {
 
     const payload = (await response.json()) as CreateRoomResponse;
     state.roomLink = payload.joinUrl;
+    state.setupPanelMode = 'share';
     connectToRoom(payload.roomId);
   } catch {
     resetRoomView('Room creation failed. Check the server and try again.');
@@ -1879,6 +2115,26 @@ function showJoinSetup(): void {
   joinRoomInput.focus();
 }
 
+function hideSetupPanel(): void {
+  state.setupPanelMode = 'hidden';
+  render();
+}
+
+function renderShareCode(roomId: string | null): void {
+  shareRoomCode.replaceChildren();
+
+  if (!roomId) {
+    return;
+  }
+
+  for (const character of roomId) {
+    const digit = document.createElement('span');
+    digit.className = 'share-code-display__digit';
+    digit.textContent = character;
+    shareRoomCode.append(digit);
+  }
+}
+
 // Global event wiring is kept at the bottom so the file reads top-down:
 // helpers first, then lifecycle bootstrap.
 createRoomButton.addEventListener('click', () => {
@@ -1889,17 +2145,55 @@ secondaryActionButton.addEventListener('click', () => {
   showJoinSetup();
 });
 
+copyLinkButton.addEventListener('click', () => {
+  void copyRoomLink();
+});
+
 rematchButton.addEventListener('click', () => {
   sendRematchRequest();
 });
 
-setupForm.addEventListener('submit', (event) => {
-  event.preventDefault();
+setupModalCloseButton.addEventListener('click', () => {
+  hideSetupPanel();
+});
 
-  if (state.setupPanelMode === 'share') {
-    void copyRoomLink();
+setupModal.addEventListener('click', (event) => {
+  if (event.target === setupModal || event.target instanceof HTMLElement && event.target.classList.contains('setup-modal__backdrop')) {
+    hideSetupPanel();
+  }
+});
+
+document.addEventListener('click', (event) => {
+  if (!controlsMenu.open) {
     return;
   }
+
+  if (event.target instanceof Node && !controlsMenu.contains(event.target)) {
+    controlsMenu.open = false;
+  }
+});
+
+shareCopyLinkButton.addEventListener('click', () => {
+  void copyRoomLink();
+});
+
+shareCopyCodeButton.addEventListener('click', async () => {
+  if (!state.roomId) {
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(state.roomId);
+    state.feedback = 'Room code copied to clipboard.';
+  } catch {
+    state.feedback = 'Copy failed. Copy the room code manually.';
+  }
+
+  render();
+});
+
+setupForm.addEventListener('submit', (event) => {
+  event.preventDefault();
 
   const roomId = extractRoomId(joinRoomInput.value);
   if (!roomId) {
@@ -1909,6 +2203,7 @@ setupForm.addEventListener('submit', (event) => {
     return;
   }
 
+  hideSetupPanel();
   connectToRoom(roomId);
 });
 
@@ -1962,7 +2257,6 @@ render();
 window.requestAnimationFrame(drawFrame);
 
 if (initialRoomId) {
-  state.setupPanelMode = 'join';
   joinRoomInput.value = `${window.location.origin}/?room=${initialRoomId}`;
   connectToRoom(initialRoomId);
 }
